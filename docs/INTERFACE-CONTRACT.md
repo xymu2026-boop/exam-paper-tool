@@ -267,7 +267,7 @@ class Database:
     
     # --- Paper CRUD ---
     def create_paper(self, child_id: str, subject: str, original_path: str,
-                     paper_type: str = '其他', title: str = None) -> int:
+                     paper_type: str = '其他', title: str = None) -> Optional[int]:
         """创建试卷记录，返回 paper_id"""
     
     def get_paper(self, paper_id: int) -> Optional[Paper]:
@@ -289,7 +289,7 @@ class Database:
                        crop_x: int, crop_y: int, crop_width: int, crop_height: int,
                        mistake_image_path: str = None,
                        clean_mistake_image_path: str = None,
-                       note: str = None, error_type: str = None) -> int:
+                       note: str = None, error_type: str = None) -> Optional[int]:
         """创建错题记录，返回 mistake_id"""
     
     def get_mistake(self, mistake_id: int) -> Optional[Mistake]:
@@ -303,12 +303,21 @@ class Database:
                       limit: int = 100, offset: int = 0) -> list[Mistake]:
         """查询错题列表"""
     
+    def update_mistake_paths(self, mistake_id: int,
+                           mistake_image_path: str = None,
+                           clean_mistake_image_path: str = None) -> bool:
+        """更新错题图片路径（用于 create 后回填）"""
+
     def delete_mistake(self, mistake_id: int) -> bool:
         """删除错题"""
     
+    def update_mistake_paths(self, mistake_id: int,
+                           mistake_image_path: str = None,
+                           clean_mistake_image_path: str = None) -> bool:
+
     # --- Export Log ---
     def create_export_log(self, child_id: str, mistake_ids: list[int],
-                          pdf_path: str, subject: str = None) -> int:
+                          pdf_path: str, subject: str = None) -> Optional[int]:
         """记录导出操作"""
     
     def list_export_logs(self, child_id: str = None, limit: int = 20) -> list[dict]:
@@ -349,7 +358,7 @@ POST   /api/mistakes                # 创建错题（框选）
 GET    /api/mistakes                # 错题列表
 DELETE /api/mistakes/{id}           # 删除错题
 PATCH  /api/mistakes/{id}           # 更新错题状态/备注
-POST   /api/export/pdf              # 导出 PDF
+POST   /api/export/pdf              # 导出 PDF (body: child_id, mistake_ids, layout, title?)
 GET    /api/export/history           # 导出历史
 GET    /static/data/{path}          # 访问图片文件
 ```
@@ -368,14 +377,16 @@ GET    /static/data/{path}          # 访问图片文件
 
 # --- 试卷相关 ---
 @app.post('/api/papers/upload')
-async def upload_paper(file: UploadFile, child_id: str, subject: str,
-                       paper_type: str = '其他', title: str = None):
+async def upload_paper(file: UploadFile, child_id: str = Form(...), subject: str = Form(...),
+                       paper_type: str = Form('其他'), title: str = Form(None)):
     """
     上传试卷图片。
     1. 验证文件类型（jpg/jpeg/png/heic）
     2. 保存原图到 data/originals/{child_id}/{subject}/
     3. 写入 DB (status='pending')
     4. 返回 paper_id
+    
+    注: child_id/subject/paper_type/title 为 Form 字段（multipart/form-data）
     """
     # Response: {"paper_id": 1, "status": "pending"}
 
@@ -429,7 +440,7 @@ async def delete_mistake(mistake_id: int):
 # --- 导出相关 ---
 @app.post('/api/export/pdf')
 async def export_pdf(child_id: str, mistake_ids: list[int],
-                     layout: str = 'one_per_page'):
+                     layout: str = 'one_per_page', title: str = None):
     """
     导出错题 PDF。
     1. 从 DB 查询错题图片路径
@@ -438,6 +449,7 @@ async def export_pdf(child_id: str, mistake_ids: list[int],
     4. 返回 PDF 下载链接
     """
     # Response: {"pdf_url": "/static/data/exports/1.pdf", "export_id": 1}
+    # title 可选，传入后会作为 PDF 首页标题
 
 @app.get('/api/export/history')
 async def export_history(child_id: str = None, limit: int = 20):
