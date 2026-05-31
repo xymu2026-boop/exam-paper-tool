@@ -45,9 +45,29 @@ def crop_and_save(
 
     The destination's parent directory is created automatically.  Pillow
     handles JPEG/PNG/HEIC transparently; the output is always JPEG.
+
+    Raises:
+        ValueError: If the requested crop rectangle lies (even partially)
+            outside the source image bounds, or if ``w``/``h`` are not
+            positive.
     """
     Path(dst_path).parent.mkdir(parents=True, exist_ok=True)
     with Image.open(src_path) as img:
+        if w <= 0 or h <= 0:
+            raise ValueError(
+                f'Crop dimensions must be positive (got w={w}, h={h})'
+            )
+        if (
+            x < 0
+            or y < 0
+            or x + w > img.width
+            or y + h > img.height
+        ):
+            raise ValueError(
+                'Crop region exceeds image bounds: '
+                f'requested ({x}, {y}, {x + w}, {y + h}), '
+                f'image size {img.width}x{img.height}'
+            )
         # Convert to RGB before saving as JPEG to avoid mode errors on PNG.
         cropped = img.crop((x, y, x + w, y + h))
         if cropped.mode in ('RGBA', 'P', 'LA'):

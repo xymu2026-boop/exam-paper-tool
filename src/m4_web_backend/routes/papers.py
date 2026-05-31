@@ -213,19 +213,12 @@ async def list_papers(
         offset=offset,
     )
     items = [paper_to_out(p) for p in papers]
-    # M2 does not expose a count() helper; for the MVP a separate query
-    # using the same filters gives us the total without joining.
-    # NB: list_papers respects pagination, so re-query with a very large
-    # limit for an accurate total. For the home-use scale (<1000 rows)
-    # this is acceptable.
-    total_rows = db.list_papers(
+    total = db.count_papers(
         child_id=child_id,
         subject=subject,
         status=status,
-        limit=1_000_000,
-        offset=0,
     )
-    return PaperListResponse(papers=items, total=len(total_rows))
+    return PaperListResponse(papers=items, total=total)
 
 
 @router.get(

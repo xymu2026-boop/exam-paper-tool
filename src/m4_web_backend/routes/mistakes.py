@@ -116,6 +116,13 @@ async def create_mistake(
             payload.crop_width,
             payload.crop_height,
         )
+    except ValueError as exc:
+        # Crop bounds validation failed — clean up and return 400.
+        db.delete_mistake(mistake_id)
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
         # Clean up the DB row so the caller can retry without zombies.
         db.delete_mistake(mistake_id)
@@ -159,15 +166,13 @@ async def list_mistakes(
         offset=offset,
     )
     items = [mistake_to_out(m) for m in mistakes]
-    total_rows = db.list_mistakes(
+    total = db.count_mistakes(
         child_id=child_id,
         subject=subject,
         status=status,
         paper_id=paper_id,
-        limit=1_000_000,
-        offset=0,
     )
-    return MistakeListResponse(mistakes=items, total=len(total_rows))
+    return MistakeListResponse(mistakes=items, total=total)
 
 
 # ---------------------------------------------------------------------------
@@ -208,28 +213,17 @@ async def update_mistake(
                 detail=f'Invalid status: {payload.status}',
             )
 
-    # M2 does not expose a single-call note/error_type updater; perform a
-    # parameterised UPDATE via the existing connection while respecting the
-    # module's lock.  This is the *only* place M4 touches SQL directly,
-    # and it is intentionally narrow: editing two free-text fields on an
-    # existing row.
-    set_clauses: list[str] = []
-    params: list[object] = []
-    if payload.note is not None:
-        set_clauses.append('note = ?')
-        params.append(payload.note)
-    if payload.error_type is not None:
-        set_clauses.append('error_type = ?')
-        params.append(payload.error_type)
-
-    if set_clauses:
-        params.append(mistake_id)
-        sql = (
-            f'UPDATE mistake SET {", ".join(set_clauses)} WHERE id = ?'
+    if payload.note is not None or payload.error_type is not None:
+        ok = db.update_mistake_fields(
+            mistake_id,
+            note=payload.note,
+            error_type=payload.error_type,
         )
-        # mypy: db._lock and db.conn are public-enough attributes here.
-        with db._lock:  # noqa: SLF001 — narrow internal access
-            db.conn.execute(sql, params)
+        if not ok:
+            raise HTTPException(
+                status_code=400,
+                detail=f'Invalid error_type: {payload.error_type}',
+            )
 
     return SuccessResponse(success=True)
 

@@ -236,6 +236,36 @@ class Database:
         except sqlite3.Error:
             return []
 
+    def count_papers(
+        self,
+        child_id: str = None,
+        subject: str = None,
+        status: str = None,
+    ) -> int:
+        """Count papers matching the given filters.
+
+        Uses the same filter logic as :meth:`list_papers` but returns a
+        single integer total via ``SELECT COUNT(*)``.  Filters that fail
+        validation are silently ignored.  Returns ``0`` on database error.
+        """
+        conditions: dict[str, Any] = {}
+        if child_id is not None and self._validate_child_id(child_id):
+            conditions["child_id"] = child_id
+        if subject is not None and self._validate_subject(subject):
+            conditions["subject"] = subject
+        if status is not None and self._validate_paper_status(status):
+            conditions["status"] = status
+
+        where_clause, params = build_where(conditions)
+        sql = f"SELECT COUNT(*) FROM paper{where_clause}"
+
+        try:
+            cur = self.conn.execute(sql, params)
+            row = cur.fetchone()
+            return int(row[0]) if row is not None else 0
+        except sqlite3.Error:
+            return 0
+
     # ------------------------------------------------------------------
     # Mistake CRUD
     # ------------------------------------------------------------------
@@ -359,6 +389,48 @@ class Database:
         except sqlite3.Error:
             return False
 
+    def update_mistake_fields(
+        self,
+        mistake_id: int,
+        note: str = None,
+        error_type: str = None,
+    ) -> bool:
+        """Update free-text/category fields on a mistake (note, error_type).
+
+        Only the explicitly provided non-``None`` fields are written.  If
+        both ``note`` and ``error_type`` are ``None`` the call is a no-op
+        and returns ``False``.  ``error_type`` is validated against the
+        allowed enum before issuing SQL.
+
+        Returns ``False`` on validation failure, non-existent record, or
+        database error.
+        """
+        if error_type is not None and not self._validate_error_type(error_type):
+            return False
+
+        set_clauses: list[str] = []
+        params: list[Any] = []
+
+        if note is not None:
+            set_clauses.append("note = ?")
+            params.append(note)
+        if error_type is not None:
+            set_clauses.append("error_type = ?")
+            params.append(error_type)
+
+        if not set_clauses:
+            return False
+
+        params.append(mistake_id)
+        sql = f"UPDATE mistake SET {', '.join(set_clauses)} WHERE id = ?"
+
+        try:
+            with self._lock:
+                cur = self.conn.execute(sql, params)
+                return cur.rowcount > 0
+        except sqlite3.Error:
+            return False
+
     def list_mistakes(
         self,
         child_id: str = None,
@@ -397,6 +469,39 @@ class Database:
             return [row_to_mistake(row) for row in cur.fetchall()]
         except sqlite3.Error:
             return []
+
+    def count_mistakes(
+        self,
+        child_id: str = None,
+        subject: str = None,
+        status: str = None,
+        paper_id: int = None,
+    ) -> int:
+        """Count mistakes matching the given filters.
+
+        Uses the same filter logic as :meth:`list_mistakes` but returns a
+        single integer total via ``SELECT COUNT(*)``.  Filters that fail
+        validation are silently ignored.  Returns ``0`` on database error.
+        """
+        conditions: dict[str, Any] = {}
+        if child_id is not None and self._validate_child_id(child_id):
+            conditions["child_id"] = child_id
+        if subject is not None and self._validate_subject(subject):
+            conditions["subject"] = subject
+        if status is not None and self._validate_mistake_status(status):
+            conditions["status"] = status
+        if paper_id is not None:
+            conditions["paper_id"] = paper_id
+
+        where_clause, params = build_where(conditions)
+        sql = f"SELECT COUNT(*) FROM mistake{where_clause}"
+
+        try:
+            cur = self.conn.execute(sql, params)
+            row = cur.fetchone()
+            return int(row[0]) if row is not None else 0
+        except sqlite3.Error:
+            return 0
 
     def delete_mistake(self, mistake_id: int) -> bool:
         """Permanently delete a mistake record.
@@ -449,6 +554,26 @@ class Database:
                 return cur.lastrowid
         except sqlite3.Error:
             return None
+
+    def update_export_log_path(self, export_id: int, pdf_path: str) -> bool:
+        """Update the ``pdf_path`` of an existing export log entry.
+
+        Used by callers who reserve an ``export_id`` with a placeholder
+        path and need to backfill the real on-disk location once it is
+        known (e.g. ``data/exports/{export_id}.pdf``).
+
+        Returns ``False`` if the record does not exist or a database
+        error occurs.
+        """
+        try:
+            with self._lock:
+                cur = self.conn.execute(
+                    "UPDATE export_log SET pdf_path = ? WHERE id = ?",
+                    (pdf_path, export_id),
+                )
+                return cur.rowcount > 0
+        except sqlite3.Error:
+            return False
 
     def list_export_logs(
         self,

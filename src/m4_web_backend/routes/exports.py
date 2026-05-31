@@ -111,12 +111,7 @@ async def export_pdf_route(
     pdf_path = config.EXPORTS_DIR / f'{export_id}.pdf'
 
     # Update the log with the real path now that we know export_id.
-    # (Direct SQL — narrow scope, single column update.)
-    with db._lock:  # noqa: SLF001 — narrow internal access
-        db.conn.execute(
-            'UPDATE export_log SET pdf_path = ? WHERE id = ?',
-            (str(pdf_path), export_id),
-        )
+    db.update_export_log_path(export_id, str(pdf_path))
 
     cfg = ExportConfig(layout=payload.layout, title=payload.title or '')
 
