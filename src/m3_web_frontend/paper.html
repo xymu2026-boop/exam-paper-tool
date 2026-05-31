@@ -60,52 +60,51 @@
       </div>
     </div>
 
-    <!-- Mobile tab switcher -->
-    <div class="image-tabs show-mobile" role="tablist" aria-label="切换图片">
-      <button role="tab" :aria-pressed="activeTab === 'cleaned'"  @click="activeTab = 'cleaned'">擦除图（可框选）</button>
-      <button role="tab" :aria-pressed="activeTab === 'original'" @click="activeTab = 'original'">原图</button>
+    <!-- Multi-stage tab switcher -->
+    <div class="image-tabs" role="tablist" aria-label="切换查看阶段">
+      <template x-for="tab in tabs" :key="tab.key">
+        <button role="tab"
+                :class="{ 'tab--active': activeTab === tab.key }"
+                :aria-pressed="activeTab === tab.key"
+                @click="switchTab(tab.key)"
+                x-text="tab.label"></button>
+      </template>
     </div>
 
-    <!-- Side-by-side compare -->
-    <section class="compare-grid compare-grid--mobile-tabs" style="margin-top: var(--space-3)">
-      <!-- Original -->
-      <div class="image-pane" data-pane="original" :data-active="activeTab === 'original'">
-        <div class="image-pane__label">
-          <span>原图</span>
-          <span class="text-faint text-sm">仅查看</span>
-        </div>
-        <div class="image-pane__viewport">
-          <img x-show="originalUrl" :src="originalUrl" alt="原图" @load="onOriginalLoad($event)" />
-          <div class="empty-state" x-show="!originalUrl">
-            <div class="empty-state__icon">🖼️</div>
-            <div class="text-faint">还没有原图</div>
+    <!-- Stage image viewer -->
+    <section style="margin-top: var(--space-3)">
+      <template x-for="tab in tabs" :key="tab.key">
+        <div class="image-pane" x-show="activeTab === tab.key">
+          <div class="image-pane__label">
+            <span x-text="tab.label"></span>
+            <span class="text-faint text-sm" x-text="tab.desc"></span>
+          </div>
+          <div class="image-pane__viewport" x-ref="viewport">
+            <!-- 最终清理图: 叠加 Canvas 框选 -->
+            <template x-if="tab.key === 'cleaned'">
+              <div>
+                <img x-ref="cleanedImg"
+                     x-show="cleanedUrl"
+                     :src="cleanedUrl"
+                     alt="擦除图"
+                     crossorigin="anonymous"
+                     @load="onCleanedLoad($event)" />
+                <canvas x-ref="canvas"
+                        x-show="cleanedUrl"
+                        aria-label="错题框选区域"></canvas>
+              </div>
+            </template>
+            <!-- 其他阶段: 纯展示 -->
+            <template x-if="tab.key !== 'cleaned'">
+              <img x-show="tab.url" :src="tab.url" :alt="tab.label" />
+            </template>
+            <div class="empty-state" x-show="!tab.url">
+              <div class="empty-state__icon">⏳</div>
+              <div class="text-faint" x-text="tab.emptyText || '暂无图片'"></div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <!-- Cleaned + canvas -->
-      <div class="image-pane" data-pane="cleaned" :data-active="activeTab === 'cleaned'">
-        <div class="image-pane__label">
-          <span>擦除图（在此框选错题）</span>
-          <span class="text-faint text-sm" x-text="boxes.length ? `${boxes.length} 个框` : '空白处拖拽即可'"></span>
-        </div>
-        <div class="image-pane__viewport" x-ref="viewport">
-          <img x-ref="cleanedImg"
-               x-show="cleanedUrl"
-               :src="cleanedUrl"
-               alt="擦除图"
-               crossorigin="anonymous"
-               @load="onCleanedLoad($event)" />
-          <canvas x-ref="canvas"
-                  x-show="cleanedUrl"
-                  aria-label="错题框选区域"></canvas>
-          <div class="empty-state" x-show="!cleanedUrl">
-            <div class="empty-state__icon">⏳</div>
-            <div class="text-faint">擦除图正在生成…</div>
-            <button class="btn btn--secondary btn--sm" @click="reprocess()">立即处理</button>
-          </div>
-        </div>
-      </div>
+      </template>
     </section>
 
     <!-- Box list / metadata editor -->
@@ -178,12 +177,24 @@
         paper: null,
         originalUrl: '',
         cleanedUrl: '',
+        processedUrl: '',
+        redMaskUrl: '',
+        hwMaskUrl: '',
+        combinedMaskUrl: '',
         activeTab: 'cleaned',
+
+        tabs: [
+          { key: 'original',  label: '① 原图',     desc: '上传的原始试卷照片', emptyText: '还没有原图' },
+          { key: 'processed',  label: '② 预处理',   desc: '轻量处理: 旋转/裁边/去阴影', emptyText: '预处理图未生成' },
+          { key: 'hw_mask',    label: '③ 手写Mask', desc: '白色=识别的手写笔迹(铅笔/黑笔)', emptyText: 'Mask未生成' },
+          { key: 'red_mask',   label: '④ 红笔Mask', desc: '白色=识别的红色批改/圈画', emptyText: 'Mask未生成' },
+          { key: 'cleaned',    label: '⑤ 最终清理', desc: '擦除手写+红笔后的干净试卷(可框选错题)', emptyText: '擦除图正在生成…' },
+        ],
 
         cropper: null,
         boxes: [],
         selectedBoxId: null,
-        existingMistakes: [],   // server-side mistakes loaded at start
+        existingMistakes: [],
 
         saving: false,
         processing: false,
@@ -201,32 +212,54 @@
           try {
             const p = await ExamApi.getPaper(this.paperId);
             this.paper = p;
-            this.originalUrl = p.original_url || App.staticUrl(p.original_path);
-            this.cleanedUrl  = p.cleaned_url  || App.staticUrl(p.cleaned_path || p.processed_path);
+
+            const base = p.original_path ? p.original_path.replace(/original\.jpg$/, '') : '';
+            const staticBase = App.staticUrl || ((path) => '/static/data/' + path);
+
+            this.originalUrl  = p.original_url  || staticBase(p.original_path);
+            this.cleanedUrl   = p.cleaned_url   || staticBase(p.cleaned_path || p.processed_path);
+            this.processedUrl = p.processed_url || (base ? staticBase(base + 'processed.jpg') : '');
+            this.redMaskUrl   = p.red_mask_url  || (base ? staticBase(base + 'red_mask.jpg') : '');
+            this.hwMaskUrl    = p.hw_mask_url   || (base ? staticBase(base + 'handwriting_mask.jpg') : '');
+            this.combinedMaskUrl = (base ? staticBase(base + 'combined_mask.jpg') : '');
+
+            this.updateTabUrls();
           } catch (e) {
             App.toast(e.message || '试卷加载失败', 'error');
             return;
           }
 
-          // Existing mistakes
           try {
             const r = await ExamApi.listMistakes({ paper_id: this.paperId, limit: 100 });
             this.existingMistakes = (r && r.mistakes) || [];
-          } catch (e) {
-            // non-fatal
+          } catch (e) { /* non-fatal */ }
+        },
+
+        updateTabUrls() {
+          const map = {
+            original: this.originalUrl,
+            processed: this.processedUrl,
+            hw_mask: this.hwMaskUrl,
+            red_mask: this.redMaskUrl,
+            cleaned: this.cleanedUrl,
+          };
+          this.tabs = this.tabs.map(t => ({ ...t, url: map[t.key] || '' }));
+        },
+
+        switchTab(key) {
+          this.activeTab = key;
+          if (key === 'cleaned' && this.cleanedUrl && !this.cropper) {
+            this.$nextTick(() => {
+              const img = this.$refs.cleanedImg;
+              if (img) this.onCleanedLoad({ target: img });
+            });
           }
         },
 
-        onOriginalLoad() { /* no-op for now */ },
-
         onCleanedLoad(ev) {
-          // Set canvas to cover the image, then init/refresh cropper.
           const img = ev.target;
           const canvas = this.$refs.canvas;
           if (!img || !canvas) return;
-
-          // After layout: width/height inherited from CSS (100% of viewport)
-          // Wait one frame so getBoundingClientRect reflects actual size.
           requestAnimationFrame(() => {
             if (this.cropper) this.cropper.destroy();
             this.cropper = createCropper({
@@ -235,7 +268,6 @@
               onChange: (boxes) => { this.boxes = boxes; },
               onSelect: (id) => { this.selectedBoxId = id; },
             });
-            // Hydrate from server
             const initial = (this.existingMistakes || []).map((m) => ({
               id: m.id,
               x: m.crop_x, y: m.crop_y,
@@ -247,20 +279,15 @@
           });
         },
 
-        selectBox(id) {
-          if (this.cropper) this.cropper.selectBox(id);
-        },
+        selectBox(id) { if (this.cropper) this.cropper.selectBox(id); },
 
         updateBoxField(id, key, value) {
           if (!this.cropper) return;
-          const partial = {};
-          partial[key] = value;
-          this.cropper.updateBox(id, partial);
+          this.cropper.updateBox(id, { [key]: value });
         },
 
         removeBox(b) {
           if (!this.cropper) return;
-          // If it has a backend ID, fire DELETE first.
           const isBackend = typeof b.id === 'number' || /^\d+$/.test(String(b.id));
           if (isBackend) {
             ExamApi.deleteMistake(b.id)
@@ -272,7 +299,6 @@
 
         clearAllBoxes() {
           if (!this.cropper) return;
-          // Best-effort: delete server-side ones
           for (const b of this.boxes) {
             if (typeof b.id === 'number' || /^\d+$/.test(String(b.id))) {
               ExamApi.deleteMistake(b.id).catch(() => {});
@@ -315,27 +341,28 @@
             }
             if (failCount === 0) App.toast(`已保存 ${okCount} 个错题`, 'success');
             else App.toast(`保存完成,${okCount} 成功 / ${failCount} 失败`, 'error');
-          } finally {
-            this.saving = false;
-          }
+          } finally { this.saving = false; }
         },
 
         async reprocess() {
           if (this.processing) return;
           this.processing = true;
           try {
-            const r = await ExamApi.processPaper(this.paperId);
+            await ExamApi.processPaper(this.paperId);
             App.toast('处理完成', 'success');
-            // reload paper to get fresh URLs
             const p = await ExamApi.getPaper(this.paperId);
             this.paper = p;
-            this.originalUrl = p.original_url || App.staticUrl(p.original_path);
-            this.cleanedUrl  = p.cleaned_url  || App.staticUrl(p.cleaned_path || p.processed_path);
+            const base = p.original_path ? p.original_path.replace(/original\.jpg$/, '') : '';
+            const staticBase = App.staticUrl || ((path) => '/static/data/' + path);
+            this.originalUrl  = p.original_url  || staticBase(p.original_path);
+            this.cleanedUrl   = p.cleaned_url   || staticBase(p.cleaned_path);
+            this.processedUrl = p.processed_url || (base ? staticBase(base + 'processed.jpg') : '');
+            this.redMaskUrl   = p.red_mask_url  || (base ? staticBase(base + 'red_mask.jpg') : '');
+            this.hwMaskUrl    = p.hw_mask_url   || (base ? staticBase(base + 'handwriting_mask.jpg') : '');
+            this.updateTabUrls();
           } catch (e) {
             App.toast(e.message || '处理失败', 'error');
-          } finally {
-            this.processing = false;
-          }
+          } finally { this.processing = false; }
         },
       };
     }

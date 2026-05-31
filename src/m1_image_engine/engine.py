@@ -1,19 +1,21 @@
-"""M1 主编排：8 步流水线 + ProcessResult。
-
-ProcessResult 字段严格遵守 docs/INTERFACE-CONTRACT.md 4.1。
+"""M1 主编排: 3 阶段管线 + 6 张中间结果输出。
+阶段1: 轻量预处理
+阶段2: mask 检测 (red + handwriting + combined)
+阶段3: 擦除修复 (bgfill 红区 + inpaint 手写)
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .eraser import _apply_mask_array
-from .mask import _generate_mask_array
 from .preprocess import preprocess_pipeline
+from .mask import generate_masks
+from .eraser import apply_masks_separately
 from .quality import score_quality
-from .utils import ensure_dir, save_bgr_jpeg
+from .utils import ensure_dir, save_bgr_jpeg, load_bgr, load_gray
 
 JPEG_QUALITY = 95
 QUALITY_THRESHOLD = 0.60
@@ -21,91 +23,68 @@ QUALITY_THRESHOLD = 0.60
 
 @dataclass
 class ProcessResult:
-    """图像处理结果。"""
-
     success: bool
     processed_path: Optional[str] = None
     cleaned_path: Optional[str] = None
     quality_score: float = 0.0
     warnings: list[str] = field(default_factory=list)
     error: Optional[str] = None
+    original_path: Optional[str] = None
+    red_mask_path: Optional[str] = None
+    hw_mask_path: Optional[str] = None
+    combined_mask_path: Optional[str] = None
 
 
 def process_paper(input_path: str, output_dir: str) -> ProcessResult:
-    """处理单张试卷图片。
+    if not input_path or not output_dir:
+        return ProcessResult(success=False, error="input_path or output_dir is empty")
 
-    Args:
-        input_path: 原始图片绝对路径
-        output_dir: 输出目录绝对路径，自动创建
-
-    Returns:
-        ProcessResult
-    """
-    # 参数基础校验
-    if not input_path:
-        return ProcessResult(success=False, error="input_path is empty")
-    if not output_dir:
-        return ProcessResult(success=False, error="output_dir is empty")
-
-    # 预处理 (Step 1-5)
-    processed, warnings, err = preprocess_pipeline(input_path)
-    if err is not None or processed is None:
-        return ProcessResult(success=False, warnings=warnings, error=err)
-
-    # 创建输出目录
     try:
         ensure_dir(output_dir)
     except Exception as e:
-        return ProcessResult(
-            success=False, warnings=warnings, error=f"mkdir_failed: {e}"
-        )
+        return ProcessResult(success=False, error=f"mkdir_failed: {e}")
 
-    # 保存 processed.jpg
+    warnings: list[str] = []
+
+    original_path = os.path.join(output_dir, "original.jpg")
+    try:
+        shutil.copy2(input_path, original_path)
+    except Exception as e:
+        warnings.append(f"copy_original_failed: {e}")
+
+    processed, pw, err = preprocess_pipeline(input_path)
+    warnings.extend(pw)
+    if err is not None or processed is None:
+        return ProcessResult(success=False, warnings=warnings, error=err,
+                            original_path=original_path)
+
     processed_path = os.path.join(output_dir, "processed.jpg")
     if not save_bgr_jpeg(processed, processed_path, quality=JPEG_QUALITY):
-        return ProcessResult(
-            success=False,
-            warnings=warnings,
-            error=f"write_failed: {processed_path}",
-        )
+        return ProcessResult(success=False, warnings=warnings,
+                            error=f"write_failed: {processed_path}",
+                            original_path=original_path)
 
-    # Step 6: mask
-    try:
-        mask = _generate_mask_array(processed)
-    except Exception as e:
-        return ProcessResult(
-            success=False,
-            processed_path=processed_path,
-            warnings=warnings,
-            error=f"mask_failed: {e}",
-        )
-
-    if int((mask > 127).sum()) == 0:
-        warnings.append("no_handwriting_detected")
-
-    # Step 7: 擦除
-    try:
-        cleaned = _apply_mask_array(processed, mask, method="white")
-    except Exception as e:
-        return ProcessResult(
-            success=False,
-            processed_path=processed_path,
-            warnings=warnings,
-            error=f"erase_failed: {e}",
-        )
+    masks = generate_masks(processed_path, output_dir)
+    red_mask_path = masks.get("red_mask_path")
+    hw_mask_path = masks.get("hw_mask_path")
+    combined_mask_path = masks.get("combined_mask_path")
 
     cleaned_path = os.path.join(output_dir, "cleaned.jpg")
-    if not save_bgr_jpeg(cleaned, cleaned_path, quality=JPEG_QUALITY):
-        return ProcessResult(
-            success=False,
-            processed_path=processed_path,
-            warnings=warnings,
-            error=f"write_failed: {cleaned_path}",
-        )
+    if not apply_masks_separately(processed_path, red_mask_path, hw_mask_path, cleaned_path):
+        return ProcessResult(success=False, warnings=warnings,
+                            error="erase_failed",
+                            original_path=original_path, processed_path=processed_path,
+                            red_mask_path=red_mask_path, hw_mask_path=hw_mask_path,
+                            combined_mask_path=combined_mask_path)
 
-    # Step 8: 评分
     try:
-        quality = score_quality(processed, cleaned, mask)
+        proc_img = load_bgr(processed_path)
+        clean_img = load_bgr(cleaned_path)
+        mask_img = load_gray(combined_mask_path) if combined_mask_path else None
+        if proc_img is not None and clean_img is not None and mask_img is not None:
+            quality = score_quality(proc_img, clean_img, mask_img)
+        else:
+            quality = 1.0
     except Exception as e:
         quality = 0.0
         warnings.append(f"quality_score_failed: {e}")
@@ -115,11 +94,14 @@ def process_paper(input_path: str, output_dir: str) -> ProcessResult:
 
     return ProcessResult(
         success=True,
+        original_path=original_path,
         processed_path=processed_path,
         cleaned_path=cleaned_path,
+        red_mask_path=red_mask_path,
+        hw_mask_path=hw_mask_path,
+        combined_mask_path=combined_mask_path,
         quality_score=quality,
         warnings=warnings,
-        error=None,
     )
 
 
