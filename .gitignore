@@ -1,0 +1,47 @@
+# === 运行时数据（隐私） ===
+data/originals/
+data/processed/
+data/mistakes/
+data/exports/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# data/samples/ 视情况：测试用脱敏样本可以进 git，真实试卷不进
+# 默认不提交，需要时单独 git add -f
+data/samples/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# === 编辑器 ===
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# === 模块本地输出 ===
+tests/*/output/
+experiments/*/output/
+
+# === 日志 ===
+*.log
+logs/

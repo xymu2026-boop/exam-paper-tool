@@ -1,3 +1,23 @@
-pillow>=10.0.0
+# 试卷宝 (Exam Paper Tool) - 依赖清单
+# 按模块分组，便于理解每个依赖的用途
+
+# === M1: 图像处理引擎 ===
 opencv-python>=4.8.0
+Pillow>=10.0.0
 numpy>=1.24.0
+pillow-heif>=0.14.0
+
+# === M2: 数据层 ===
+# (仅标准库 sqlite3，无额外依赖)
+
+# === M4: Web 后端 ===
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# === M5: PDF 导出 ===
+fpdf2>=2.7.0
+
+# === 开发/测试 ===
+pytest>=7.4.0
+httpx>=0.25.0  # FastAPI TestClient 需要
