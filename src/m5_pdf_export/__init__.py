@@ -1,5 +1,10 @@
-"""M5: PDF 导出
+"""M5: PDF export module.
 
-公开接口请见 docs/INTERFACE-CONTRACT.md 4.5 节。
-开发任务卡：docs/modules/M5-PDF-EXPORT.md
+Public API (see docs/INTERFACE-CONTRACT.md section 4.5):
+    - ExportConfig
+    - export_pdf
 """
+
+from .exporter import ExportConfig, export_pdf
+
+__all__ = ["ExportConfig", "export_pdf"]
