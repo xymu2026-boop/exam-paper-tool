@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#3B82F6" />
+  <title>试卷宝 · 试卷详情</title>
+  <link rel="stylesheet" href="static/style.css" />
+
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.7/dist/cdn.min.js"></script>
+  <!-- <script defer src="static/vendor/alpinejs@3.min.js"></script> -->
+
+  <script src="static/api.js"></script>
+  <script src="static/app.js"></script>
+  <script src="static/crop.js"></script>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="container app-header__inner">
+      <a class="app-brand" href="index.html">
+        <span class="app-brand__mark">试</span>
+        试卷宝
+      </a>
+      <nav class="app-nav">
+        <a href="index.html">首页</a>
+        <a href="mistakes.html">错题库</a>
+        <a href="export.html">导出</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" x-data="paperPage()" x-init="init()" x-cloak>
+
+    <!-- Header / breadcrumb -->
+    <div class="flex items-center justify-between mt-2 mb-4 gap-3" style="flex-wrap: wrap">
+      <div class="flex items-center gap-3">
+        <a class="btn btn--ghost btn--sm" href="index.html">← 返回</a>
+        <div>
+          <h1 class="section-head__title" x-text="paper ? (paper.title || `${paper.child_id} · ${paper.subject}`) : '加载中…'"></h1>
+          <div class="paper-meta" x-show="paper">
+            <span x-text="paper && paper.child_id"></span>
+            <span>·</span>
+            <span x-text="paper && paper.subject"></span>
+            <span>·</span>
+            <span x-text="paper && (paper.paper_type || '其他')"></span>
+            <span>·</span>
+            <span x-text="paper && App.formatDate(paper.upload_time || paper.created_at)"></span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span x-show="paper" :class="paper && App.statusBadgeClass(paper.status)" x-text="paper && App.statusLabel(paper.status)"></span>
+        <button class="btn btn--secondary btn--sm" x-show="paper && paper.status !== 'processed'"
+                :disabled="processing"
+                @click="reprocess()">
+          <span x-show="!processing">重新处理</span>
+          <span x-show="processing" class="flex items-center gap-1"><span class="spinner"></span> 处理中</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile tab switcher -->
+    <div class="image-tabs show-mobile" role="tablist" aria-label="切换图片">
+      <button role="tab" :aria-pressed="activeTab === 'cleaned'"  @click="activeTab = 'cleaned'">擦除图（可框选）</button>
+      <button role="tab" :aria-pressed="activeTab === 'original'" @click="activeTab = 'original'">原图</button>
+    </div>
+
+    <!-- Side-by-side compare -->
+    <section class="compare-grid compare-grid--mobile-tabs" style="margin-top: var(--space-3)">
+      <!-- Original -->
+      <div class="image-pane" data-pane="original" :data-active="activeTab === 'original'">
+        <div class="image-pane__label">
+          <span>原图</span>
+          <span class="text-faint text-sm">仅查看</span>
+        </div>
+        <div class="image-pane__viewport">
+          <img x-show="originalUrl" :src="originalUrl" alt="原图" @load="onOriginalLoad($event)" />
+          <div class="empty-state" x-show="!originalUrl">
+            <div class="empty-state__icon">🖼️</div>
+            <div class="text-faint">还没有原图</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cleaned + canvas -->
+      <div class="image-pane" data-pane="cleaned" :data-active="activeTab === 'cleaned'">
+        <div class="image-pane__label">
+          <span>擦除图（在此框选错题）</span>
+          <span class="text-faint text-sm" x-text="boxes.length ? `${boxes.length} 个框` : '空白处拖拽即可'"></span>
+        </div>
+        <div class="image-pane__viewport" x-ref="viewport">
+          <img x-ref="cleanedImg"
+               x-show="cleanedUrl"
+               :src="cleanedUrl"
+               alt="擦除图"
+               crossorigin="anonymous"
+               @load="onCleanedLoad($event)" />
+          <canvas x-ref="canvas"
+                  x-show="cleanedUrl"
+                  aria-label="错题框选区域"></canvas>
+          <div class="empty-state" x-show="!cleanedUrl">
+            <div class="empty-state__icon">⏳</div>
+            <div class="text-faint">擦除图正在生成…</div>
+            <button class="btn btn--secondary btn--sm" @click="reprocess()">立即处理</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Box list / metadata editor -->
+    <section style="margin-top: var(--space-5)">
+      <div class="section-head">
+        <h2 class="section-head__title">错题框选 (<span x-text="boxes.length"></span>)</h2>
+        <div class="flex gap-2">
+          <button class="btn btn--ghost btn--sm" @click="clearAllBoxes()" :disabled="!boxes.length || saving">清空</button>
+          <button class="btn btn--primary"
+                  :disabled="!boxes.length || saving"
+                  @click="saveAll()">
+            <span x-show="!saving">保存所有错题</span>
+            <span x-show="saving" class="flex items-center gap-2"><span class="spinner"></span> 保存中…</span>
+          </button>
+        </div>
+      </div>
+
+      <template x-if="boxes.length === 0">
+        <div class="empty-state" style="padding: var(--space-8) var(--space-4)">
+          <div class="empty-state__icon">✏️</div>
+          <div class="empty-state__title">还没有框选错题</div>
+          <div>在左侧/上方擦除图上拖拽鼠标或手指,即可圈出错题区域。</div>
+        </div>
+      </template>
+
+      <div class="box-list" x-show="boxes.length > 0">
+        <template x-for="(b, i) in boxes" :key="b.id">
+          <div class="box-item" :class="{ 'box-item--selected': b.id === selectedBoxId }"
+               @click="selectBox(b.id)">
+            <div class="box-item__color" :style="`background:${b.color}`"></div>
+            <div class="box-item__body">
+              <div class="box-item__title">
+                第 <span x-text="i + 1"></span> 题
+                <span class="box-item__coords" x-text="`(${b.x}, ${b.y}) · ${b.width}×${b.height}px`"></span>
+              </div>
+              <div class="form-row form-row--2">
+                <div class="field">
+                  <label class="field__label">错因类型</label>
+                  <select class="select" :value="b.errorType" @change="updateBoxField(b.id, 'errorType', $event.target.value)">
+                    <option value="">未分类</option>
+                    <template x-for="t in errorTypes" :key="t">
+                      <option :value="t" x-text="t"></option>
+                    </template>
+                  </select>
+                </div>
+                <div class="field">
+                  <label class="field__label">备注</label>
+                  <input class="input" type="text" maxlength="120"
+                         placeholder="例如:漏了进位"
+                         :value="b.note"
+                         @input="updateBoxField(b.id, 'note', $event.target.value)" />
+                </div>
+              </div>
+            </div>
+            <div class="box-item__actions">
+              <button class="btn btn--ghost btn--sm" title="删除"
+                      @click.stop="removeBox(b)">✕</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    function paperPage() {
+      return {
+        paperId: null,
+        paper: null,
+        originalUrl: '',
+        cleanedUrl: '',
+        activeTab: 'cleaned',
+
+        cropper: null,
+        boxes: [],
+        selectedBoxId: null,
+        existingMistakes: [],   // server-side mistakes loaded at start
+
+        saving: false,
+        processing: false,
+
+        errorTypes: window.CROP_ERROR_TYPES || ['粗心', '概念不清', '计算错误', '不会做', '其他'],
+
+        async init() {
+          const q = App.parseQuery();
+          this.paperId = q.id;
+          if (!this.paperId) {
+            App.toast('缺少试卷 ID', 'error');
+            return;
+          }
+
+          try {
+            const p = await ExamApi.getPaper(this.paperId);
+            this.paper = p;
+            this.originalUrl = p.original_url || App.staticUrl(p.original_path);
+            this.cleanedUrl  = p.cleaned_url  || App.staticUrl(p.cleaned_path || p.processed_path);
+          } catch (e) {
+            App.toast(e.message || '试卷加载失败', 'error');
+            return;
+          }
+
+          // Existing mistakes
+          try {
+            const r = await ExamApi.listMistakes({ paper_id: this.paperId, limit: 100 });
+            this.existingMistakes = (r && r.mistakes) || [];
+          } catch (e) {
+            // non-fatal
+          }
+        },
+
+        onOriginalLoad() { /* no-op for now */ },
+
+        onCleanedLoad(ev) {
+          // Set canvas to cover the image, then init/refresh cropper.
+          const img = ev.target;
+          const canvas = this.$refs.canvas;
+          if (!img || !canvas) return;
+
+          // After layout: width/height inherited from CSS (100% of viewport)
+          // Wait one frame so getBoundingClientRect reflects actual size.
+          requestAnimationFrame(() => {
+            if (this.cropper) this.cropper.destroy();
+            this.cropper = createCropper({
+              canvas,
+              image: img,
+              onChange: (boxes) => { this.boxes = boxes; },
+              onSelect: (id) => { this.selectedBoxId = id; },
+            });
+            // Hydrate from server
+            const initial = (this.existingMistakes || []).map((m) => ({
+              id: m.id,
+              x: m.crop_x, y: m.crop_y,
+              w: m.crop_width, h: m.crop_height,
+              note: m.note || '',
+              errorType: m.error_type || '',
+            }));
+            if (initial.length) this.cropper.setBoxes(initial);
+          });
+        },
+
+        selectBox(id) {
+          if (this.cropper) this.cropper.selectBox(id);
+        },
+
+        updateBoxField(id, key, value) {
+          if (!this.cropper) return;
+          const partial = {};
+          partial[key] = value;
+          this.cropper.updateBox(id, partial);
+        },
+
+        removeBox(b) {
+          if (!this.cropper) return;
+          // If it has a backend ID, fire DELETE first.
+          const isBackend = typeof b.id === 'number' || /^\d+$/.test(String(b.id));
+          if (isBackend) {
+            ExamApi.deleteMistake(b.id)
+              .then(() => App.toast('已删除', 'success'))
+              .catch((e) => App.toast(e.message || '删除失败', 'error'));
+          }
+          this.cropper.deleteBox(b.id);
+        },
+
+        clearAllBoxes() {
+          if (!this.cropper) return;
+          // Best-effort: delete server-side ones
+          for (const b of this.boxes) {
+            if (typeof b.id === 'number' || /^\d+$/.test(String(b.id))) {
+              ExamApi.deleteMistake(b.id).catch(() => {});
+            }
+          }
+          this.cropper.clearAll();
+          App.toast('已清空所有框选', 'info');
+        },
+
+        async saveAll() {
+          if (!this.boxes.length) return;
+          this.saving = true;
+          let okCount = 0, failCount = 0;
+          try {
+            for (const b of [...this.boxes]) {
+              const isNew = String(b.id).startsWith('tmp-');
+              try {
+                if (isNew) {
+                  const r = await ExamApi.createMistake(
+                    this.paperId,
+                    { x: b.x, y: b.y, width: b.width, height: b.height },
+                    b.note || '',
+                    b.errorType || ''
+                  );
+                  if (r && r.mistake_id !== undefined) {
+                    this.cropper.updateBox(b.id, { id: r.mistake_id });
+                  }
+                  okCount++;
+                } else if (b.dirty) {
+                  await ExamApi.updateMistake(b.id, {
+                    note: b.note || '',
+                    error_type: b.errorType || '',
+                  });
+                  okCount++;
+                }
+              } catch (e) {
+                failCount++;
+                App.toast(`第 ${b.index} 题保存失败:${e.message}`, 'error');
+              }
+            }
+            if (failCount === 0) App.toast(`已保存 ${okCount} 个错题`, 'success');
+            else App.toast(`保存完成,${okCount} 成功 / ${failCount} 失败`, 'error');
+          } finally {
+            this.saving = false;
+          }
+        },
+
+        async reprocess() {
+          if (this.processing) return;
+          this.processing = true;
+          try {
+            const r = await ExamApi.processPaper(this.paperId);
+            App.toast('处理完成', 'success');
+            // reload paper to get fresh URLs
+            const p = await ExamApi.getPaper(this.paperId);
+            this.paper = p;
+            this.originalUrl = p.original_url || App.staticUrl(p.original_path);
+            this.cleanedUrl  = p.cleaned_url  || App.staticUrl(p.cleaned_path || p.processed_path);
+          } catch (e) {
+            App.toast(e.message || '处理失败', 'error');
+          } finally {
+            this.processing = false;
+          }
+        },
+      };
+    }
+  </script>
+
+</body>
+</html>

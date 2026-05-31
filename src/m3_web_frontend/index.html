@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#3B82F6" />
+  <title>试卷宝 · 上传与试卷管理</title>
+  <link rel="stylesheet" href="static/style.css" />
+
+  <!-- Alpine.js via CDN (zero-build). Local fallback comment:
+       If CDN fails, drop alpine.min.js into static/vendor/ and load it. -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.7/dist/cdn.min.js"></script>
+  <!-- <script defer src="static/vendor/alpinejs@3.min.js"></script> -->
+
+  <script src="static/api.js"></script>
+  <script src="static/app.js"></script>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="container app-header__inner">
+      <a class="app-brand" href="index.html">
+        <span class="app-brand__mark">试</span>
+        试卷宝
+      </a>
+      <nav class="app-nav">
+        <a href="index.html" aria-current="page">首页</a>
+        <a href="mistakes.html">错题库</a>
+        <a href="export.html">导出</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" x-data="indexPage()" x-init="init()" x-cloak>
+
+    <!-- Upload section -->
+    <section aria-labelledby="upload-h">
+      <h1 id="upload-h" class="section-head__title" style="margin: var(--space-5) 0 var(--space-3)">上传新试卷</h1>
+
+      <div class="card card--padded">
+        <!-- Dropzone -->
+        <label class="dropzone"
+               :class="{ 'dropzone--active': dragOver }"
+               @dragover.prevent="dragOver = true"
+               @dragleave.prevent="dragOver = false"
+               @drop.prevent="onDrop($event)">
+          <input type="file"
+                 class="dropzone__file-input"
+                 accept="image/*"
+                 @change="onFileChange($event)" />
+          <div class="dropzone__icon" aria-hidden="true">＋</div>
+          <div class="dropzone__title" x-text="file ? file.name : '拖拽图片到这里,或点击选择'"></div>
+          <div class="dropzone__hint" x-text="file ? formatBytes(file.size) : '支持 JPG / PNG / HEIC,最大 20 MB'"></div>
+        </label>
+
+        <!-- Form -->
+        <div class="form-row form-row--3" style="margin-top: var(--space-4)">
+          <div class="field">
+            <label class="field__label" for="f-child">孩子</label>
+            <select id="f-child" class="select" x-model="formData.childId">
+              <option value="K1">K1</option>
+              <option value="K2">K2</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="f-subject">学科</label>
+            <select id="f-subject" class="select" x-model="formData.subject">
+              <template x-for="s in subjects" :key="s">
+                <option :value="s" x-text="s"></option>
+              </template>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="f-type">试卷类型</label>
+            <select id="f-type" class="select" x-model="formData.paperType">
+              <template x-for="t in paperTypes" :key="t">
+                <option :value="t" x-text="t"></option>
+              </template>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-top: var(--space-3)">
+          <div class="field">
+            <label class="field__label" for="f-title">备注 / 标题（可选）</label>
+            <input id="f-title" class="input" type="text" maxlength="80"
+                   placeholder="例如:期中复习卷"
+                   x-model="formData.title" />
+          </div>
+        </div>
+
+        <div class="flex gap-2 mt-4" style="flex-wrap: wrap">
+          <button class="btn btn--primary btn--lg"
+                  :disabled="uploading || !file"
+                  @click="upload()">
+            <span x-show="!uploading">上传试卷</span>
+            <span x-show="uploading" class="flex items-center gap-2">
+              <span class="spinner"></span> 上传中…
+            </span>
+          </button>
+          <button class="btn btn--ghost" type="button"
+                  :disabled="uploading"
+                  @click="reset()">重置</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Paper list -->
+    <section aria-labelledby="list-h">
+      <div class="section-head">
+        <h2 id="list-h" class="section-head__title">试卷列表</h2>
+        <span class="section-head__meta" x-text="papers.length ? `共 ${total} 张` : ''"></span>
+      </div>
+
+      <!-- Loading skeletons -->
+      <template x-if="loading && papers.length === 0">
+        <div class="paper-grid">
+          <template x-for="i in 3" :key="i">
+            <div class="card">
+              <div class="skeleton" style="aspect-ratio: 4/3"></div>
+              <div class="card--padded">
+                <div class="skeleton" style="height: 18px; width: 60%; margin-bottom: 8px"></div>
+                <div class="skeleton" style="height: 14px; width: 40%"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Empty -->
+      <template x-if="!loading && papers.length === 0">
+        <div class="empty-state">
+          <div class="empty-state__icon">📄</div>
+          <div class="empty-state__title">还没有试卷</div>
+          <div>把孩子的试卷拍下来,上传到这里就能开始整理啦。</div>
+        </div>
+      </template>
+
+      <!-- Grid -->
+      <div class="paper-grid" x-show="papers.length > 0">
+        <template x-for="p in papers" :key="p.id">
+          <article class="card paper-card card--clickable"
+                   @click="openPaper(p)">
+            <div class="paper-card__thumb">
+              <img x-show="thumbUrl(p)" :src="thumbUrl(p)" :alt="p.title || p.subject" loading="lazy"
+                   @error="onThumbError($event)" />
+              <div class="paper-card__thumb-empty" x-show="!thumbUrl(p)">无预览</div>
+            </div>
+            <div class="paper-card__body">
+              <h3 class="paper-card__title" x-text="p.title || `${p.child_id} · ${p.subject} · ${p.paper_type || '其他'}`"></h3>
+              <div class="paper-card__meta">
+                <span x-text="p.child_id"></span>
+                <span>·</span>
+                <span x-text="p.subject"></span>
+                <template x-if="p.paper_type">
+                  <span>· <span x-text="p.paper_type"></span></span>
+                </template>
+              </div>
+              <div class="paper-card__footer">
+                <span :class="App.statusBadgeClass(p.status)" x-text="App.statusLabel(p.status)"></span>
+                <div class="flex items-center gap-2">
+                  <button class="btn btn--ghost btn--sm"
+                          x-show="p.status === 'pending' || p.status === 'failed'"
+                          @click.stop="process(p)"
+                          :disabled="processingIds.includes(p.id)">
+                    <span x-show="!processingIds.includes(p.id)">处理</span>
+                    <span x-show="processingIds.includes(p.id)" class="flex items-center gap-1">
+                      <span class="spinner"></span> 处理中
+                    </span>
+                  </button>
+                  <span class="paper-card__date" x-text="App.timeAgo(p.upload_time || p.created_at)"></span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </template>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    function indexPage() {
+      return {
+        // form
+        file: null,
+        formData: { childId: 'K1', subject: '数学', paperType: '其他', title: '' },
+        dragOver: false,
+        uploading: false,
+        // list
+        papers: [],
+        total: 0,
+        loading: false,
+        processingIds: [],
+        // options
+        subjects:    ['数学', '语文', '英语', '科学', '其他'],
+        paperTypes:  ['作业', '单元卷', '考试卷', '练习册', '其他'],
+
+        async init() {
+          await this.loadPapers();
+        },
+
+        async loadPapers() {
+          this.loading = true;
+          try {
+            const r = await ExamApi.listPapers({ limit: 50, offset: 0 });
+            this.papers = (r && r.papers) || [];
+            this.total = (r && r.total) || this.papers.length;
+          } catch (e) {
+            App.toast(e.message || '加载试卷失败', 'error');
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        onFileChange(ev) {
+          const f = ev.target.files && ev.target.files[0];
+          if (f) this.setFile(f);
+        },
+        onDrop(ev) {
+          this.dragOver = false;
+          const f = ev.dataTransfer.files && ev.dataTransfer.files[0];
+          if (f) this.setFile(f);
+        },
+        setFile(f) {
+          const MAX = 20 * 1024 * 1024;
+          if (f.size > MAX) { App.toast('图片太大了,请压缩后再上传 (≤20MB)', 'error'); return; }
+          this.file = f;
+        },
+
+        async upload() {
+          if (!this.file) { App.toast('请先选择图片', 'error'); return; }
+          this.uploading = true;
+          try {
+            const res = await ExamApi.uploadPaper(
+              this.file, this.formData.childId, this.formData.subject,
+              this.formData.paperType, this.formData.title
+            );
+            App.toast('上传成功', 'success');
+            // optimistic insert
+            this.papers.unshift({
+              id: res.paper_id,
+              child_id: this.formData.childId,
+              subject: this.formData.subject,
+              paper_type: this.formData.paperType,
+              title: this.formData.title,
+              status: res.status || 'pending',
+              upload_time: new Date().toISOString().replace('T', ' ').slice(0, 19),
+              original_path: null,
+              cleaned_path: null,
+            });
+            this.total++;
+            this.reset();
+            // fire-and-forget process trigger
+            this.process(this.papers[0], { silent: true });
+          } catch (e) {
+            App.toast(e.message || '上传失败', 'error');
+          } finally {
+            this.uploading = false;
+          }
+        },
+
+        reset() {
+          this.file = null;
+          this.formData.title = '';
+        },
+
+        async process(p, opts = {}) {
+          if (!p || this.processingIds.includes(p.id)) return;
+          this.processingIds.push(p.id);
+          p.status = 'processing';
+          try {
+            const r = await ExamApi.processPaper(p.id);
+            p.status = r.status || 'processed';
+            if (r.quality_score !== undefined) p.quality_score = r.quality_score;
+            if (!opts.silent) App.toast('处理完成', 'success');
+            await this.loadPapers();
+          } catch (e) {
+            p.status = 'failed';
+            App.toast(e.message || '处理失败', 'error');
+          } finally {
+            this.processingIds = this.processingIds.filter((id) => id !== p.id);
+          }
+        },
+
+        openPaper(p) {
+          location.href = `paper.html?id=${encodeURIComponent(p.id)}`;
+        },
+
+        thumbUrl(p) {
+          const path = p.cleaned_path || p.processed_path || p.original_path || p.thumb_url || p.thumbnail;
+          return path ? App.staticUrl(path) : '';
+        },
+        onThumbError(ev) { ev.target.style.display = 'none'; },
+
+        formatBytes(n) {
+          if (!n && n !== 0) return '';
+          const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+          while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+          return n.toFixed(n < 10 && i ? 1 : 0) + ' ' + u[i];
+        },
+      };
+    }
+  </script>
+
+</body>
+</html>

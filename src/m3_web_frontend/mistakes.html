@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#3B82F6" />
+  <title>试卷宝 · 错题库</title>
+  <link rel="stylesheet" href="static/style.css" />
+
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.7/dist/cdn.min.js"></script>
+  <!-- <script defer src="static/vendor/alpinejs@3.min.js"></script> -->
+
+  <script src="static/api.js"></script>
+  <script src="static/app.js"></script>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="container app-header__inner">
+      <a class="app-brand" href="index.html">
+        <span class="app-brand__mark">试</span>
+        试卷宝
+      </a>
+      <nav class="app-nav">
+        <a href="index.html">首页</a>
+        <a href="mistakes.html" aria-current="page">错题库</a>
+        <a href="export.html">导出</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" x-data="mistakesPage()" x-init="init()" x-cloak>
+
+    <div class="section-head">
+      <h1 class="section-head__title">错题库</h1>
+      <span class="section-head__meta" x-text="filtered.length ? `${filtered.length} / ${mistakes.length} 道` : ''"></span>
+    </div>
+
+    <!-- Filter bar (sticky) -->
+    <div class="filter-bar">
+      <div class="field">
+        <label class="field__label" for="f-child">孩子</label>
+        <select id="f-child" class="select" x-model="filters.childId" @change="applyFilters()">
+          <option value="">全部</option>
+          <option value="K1">K1</option>
+          <option value="K2">K2</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-subject">学科</label>
+        <select id="f-subject" class="select" x-model="filters.subject" @change="applyFilters()">
+          <option value="">全部</option>
+          <template x-for="s in subjects" :key="s">
+            <option :value="s" x-text="s"></option>
+          </template>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-status">状态</label>
+        <select id="f-status" class="select" x-model="filters.status" @change="applyFilters()">
+          <option value="">全部</option>
+          <option value="new">未掌握</option>
+          <option value="printed">已打印</option>
+          <option value="practiced">已练习</option>
+          <option value="passed">已掌握</option>
+          <option value="retry">待复习</option>
+        </select>
+      </div>
+      <div class="flex gap-2" style="align-items: flex-end">
+        <button class="btn btn--ghost" type="button" @click="resetFilters()">重置</button>
+        <button class="btn btn--secondary" type="button" @click="selectAllVisible()" x-show="filtered.length">
+          <span x-show="!allVisibleSelected()">全选</span>
+          <span x-show="allVisibleSelected()">取消全选</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <template x-if="loading">
+      <div class="mistake-grid" style="margin-top: var(--space-4)">
+        <template x-for="i in 6" :key="i">
+          <div class="card">
+            <div class="skeleton" style="aspect-ratio: 4/3"></div>
+            <div class="card--padded">
+              <div class="skeleton" style="height: 14px; width: 80%; margin-bottom: 6px"></div>
+              <div class="skeleton" style="height: 12px; width: 40%"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- Empty -->
+    <template x-if="!loading && filtered.length === 0">
+      <div class="empty-state">
+        <div class="empty-state__icon">🗂️</div>
+        <div class="empty-state__title" x-text="mistakes.length === 0 ? '还没有错题' : '没有匹配的错题'"></div>
+        <div x-show="mistakes.length === 0">去 <a href="index.html">上传试卷</a> 并框选错题吧。</div>
+        <div x-show="mistakes.length > 0">试试调整筛选条件。</div>
+      </div>
+    </template>
+
+    <!-- Grid -->
+    <div class="mistake-grid" style="margin-top: var(--space-4)" x-show="!loading && filtered.length > 0">
+      <template x-for="m in filtered" :key="m.id">
+        <article class="card mistake-card" :class="{ 'mistake-card--selected': selected.includes(m.id) }">
+          <label class="mistake-card__check">
+            <input type="checkbox"
+                   :checked="selected.includes(m.id)"
+                   @change="toggleSelect(m.id, $event.target.checked)"
+                   aria-label="选择错题" />
+          </label>
+          <div class="mistake-card__thumb" @click="openPaper(m)">
+            <img x-show="thumbUrl(m)" :src="thumbUrl(m)" :alt="m.note || '错题'" loading="lazy"
+                 @error="onThumbError($event)" />
+          </div>
+          <div class="mistake-card__body">
+            <div class="mistake-card__note" :class="{ 'mistake-card__note--empty': !m.note }"
+                 x-text="m.note || '（无备注）'"></div>
+            <div class="mistake-card__meta">
+              <span x-text="m.child_id"></span>
+              <span>·</span>
+              <span x-text="m.subject"></span>
+              <template x-if="m.error_type">
+                <span :class="App.errorTypeTagClass(m.error_type)" x-text="m.error_type"></span>
+              </template>
+              <span :class="App.statusBadgeClass(m.status === 'new' ? 'pending' : m.status === 'passed' ? 'processed' : 'processing')"
+                    x-text="App.statusLabel(m.status)"></span>
+            </div>
+            <div class="mistake-card__footer">
+              <span x-text="App.timeAgo(m.created_at)"></span>
+              <span class="text-faint">试卷 #<span x-text="m.paper_id"></span></span>
+            </div>
+          </div>
+        </article>
+      </template>
+    </div>
+
+    <!-- Floating batch action bar -->
+    <div class="batch-bar" x-show="selected.length > 0" x-transition>
+      <span class="batch-bar__count">已选 <span x-text="selected.length"></span> 道</span>
+      <button class="btn" @click="markPracticed()" :disabled="batching">
+        <span x-show="!batching">标记已练习</span>
+        <span x-show="batching" class="flex items-center gap-1"><span class="spinner"></span> 处理中</span>
+      </button>
+      <button class="btn" @click="exportSelected()">导出 PDF</button>
+      <button class="btn btn--danger" @click="deleteSelected()" :disabled="batching">删除</button>
+      <button class="btn btn--ghost" @click="selected = []">取消</button>
+    </div>
+
+  </main>
+
+  <script>
+    function mistakesPage() {
+      return {
+        mistakes: [],
+        filtered: [],
+        loading: false,
+        batching: false,
+        selected: [],
+
+        filters: { childId: '', subject: '', status: '' },
+        subjects: ['数学', '语文', '英语', '科学', '其他'],
+
+        async init() {
+          await this.loadAll();
+          // Pre-fill filters from URL if provided
+          const q = App.parseQuery();
+          if (q.child_id) this.filters.childId = q.child_id;
+          if (q.subject)  this.filters.subject = q.subject;
+          if (q.status)   this.filters.status  = q.status;
+          this.applyFilters();
+        },
+
+        async loadAll() {
+          this.loading = true;
+          try {
+            const r = await ExamApi.listMistakes({ limit: 200, offset: 0 });
+            this.mistakes = (r && r.mistakes) || [];
+            this.applyFilters();
+          } catch (e) {
+            App.toast(e.message || '加载错题失败', 'error');
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        applyFilters() {
+          const { childId, subject, status } = this.filters;
+          this.filtered = this.mistakes.filter((m) =>
+            (!childId || m.child_id === childId) &&
+            (!subject || m.subject === subject) &&
+            (!status  || m.status   === status)
+          );
+        },
+
+        resetFilters() {
+          this.filters = { childId: '', subject: '', status: '' };
+          this.applyFilters();
+        },
+
+        toggleSelect(id, checked) {
+          if (checked) {
+            if (!this.selected.includes(id)) this.selected.push(id);
+          } else {
+            this.selected = this.selected.filter((x) => x !== id);
+          }
+        },
+
+        allVisibleSelected() {
+          return this.filtered.length > 0 &&
+                 this.filtered.every((m) => this.selected.includes(m.id));
+        },
+
+        selectAllVisible() {
+          if (this.allVisibleSelected()) {
+            const visibleIds = new Set(this.filtered.map((m) => m.id));
+            this.selected = this.selected.filter((id) => !visibleIds.has(id));
+          } else {
+            const ids = new Set(this.selected);
+            for (const m of this.filtered) ids.add(m.id);
+            this.selected = [...ids];
+          }
+        },
+
+        async markPracticed() {
+          if (!this.selected.length) return;
+          this.batching = true;
+          let ok = 0, fail = 0;
+          for (const id of [...this.selected]) {
+            try { await ExamApi.updateMistake(id, { status: 'practiced' }); ok++; }
+            catch (_) { fail++; }
+          }
+          this.batching = false;
+          App.toast(fail ? `已更新 ${ok},失败 ${fail}` : `已标记 ${ok} 道为已练习`,
+                    fail ? 'error' : 'success');
+          await this.loadAll();
+          this.selected = [];
+        },
+
+        async deleteSelected() {
+          if (!this.selected.length) return;
+          if (!confirm(`确定要删除 ${this.selected.length} 道错题吗?`)) return;
+          this.batching = true;
+          let ok = 0, fail = 0;
+          for (const id of [...this.selected]) {
+            try { await ExamApi.deleteMistake(id); ok++; }
+            catch (_) { fail++; }
+          }
+          this.batching = false;
+          App.toast(fail ? `已删除 ${ok},失败 ${fail}` : `已删除 ${ok} 道`,
+                    fail ? 'error' : 'success');
+          this.selected = [];
+          await this.loadAll();
+        },
+
+        exportSelected() {
+          if (!this.selected.length) return;
+          // Derive child_id from selection (all selected should share child)
+          const childIds = new Set(this.mistakes.filter((m) => this.selected.includes(m.id)).map((m) => m.child_id));
+          const child = childIds.size === 1 ? [...childIds][0] : (this.filters.childId || 'K1');
+          const ids = this.selected.join(',');
+          location.href = `export.html?ids=${encodeURIComponent(ids)}&child_id=${encodeURIComponent(child)}`;
+        },
+
+        openPaper(m) {
+          location.href = `paper.html?id=${encodeURIComponent(m.paper_id)}`;
+        },
+
+        thumbUrl(m) {
+          const path = m.clean_mistake_image_path || m.mistake_image_path || m.thumb_url;
+          return path ? App.staticUrl(path) : '';
+        },
+        onThumbError(ev) { ev.target.style.display = 'none'; },
+      };
+    }
+  </script>
+
+</body>
+</html>

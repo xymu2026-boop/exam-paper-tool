@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#3B82F6" />
+  <title>试卷宝 · 导出 PDF</title>
+  <link rel="stylesheet" href="static/style.css" />
+
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.7/dist/cdn.min.js"></script>
+  <!-- <script defer src="static/vendor/alpinejs@3.min.js"></script> -->
+
+  <script src="static/api.js"></script>
+  <script src="static/app.js"></script>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="container app-header__inner">
+      <a class="app-brand" href="index.html">
+        <span class="app-brand__mark">试</span>
+        试卷宝
+      </a>
+      <nav class="app-nav">
+        <a href="index.html">首页</a>
+        <a href="mistakes.html">错题库</a>
+        <a href="export.html" aria-current="page">导出</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" x-data="exportPage()" x-init="init()" x-cloak>
+
+    <div class="flex items-center gap-3 mt-2 mb-4">
+      <a class="btn btn--ghost btn--sm" href="mistakes.html">← 返回错题库</a>
+      <h1 class="section-head__title">导出 PDF</h1>
+    </div>
+
+    <!-- Loading -->
+    <template x-if="loading">
+      <div class="empty-state">
+        <div class="spinner spinner--lg"></div>
+        <div>加载中…</div>
+      </div>
+    </template>
+
+    <!-- Empty -->
+    <template x-if="!loading && selectedMistakes.length === 0">
+      <div class="empty-state">
+        <div class="empty-state__icon">📦</div>
+        <div class="empty-state__title">没有选中的错题</div>
+        <div>去 <a href="mistakes.html">错题库</a> 勾选要导出的错题吧。</div>
+      </div>
+    </template>
+
+    <!-- Main export UI -->
+    <div class="export-grid" x-show="!loading && selectedMistakes.length > 0">
+
+      <!-- Left: preview -->
+      <section>
+        <div class="section-head">
+          <h2 class="section-head__title">预览 (<span x-text="selectedMistakes.length"></span> 道)</h2>
+        </div>
+        <div class="preview-list">
+          <template x-for="(m, i) in selectedMistakes" :key="m.id">
+            <div class="preview-tile">
+              <img x-show="thumbUrl(m)" :src="thumbUrl(m)" :alt="`错题 ${i+1}`" loading="lazy"
+                   @error="onThumbError($event)" />
+              <div class="preview-tile__index" x-text="i + 1"></div>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- Right: config + action -->
+      <aside>
+        <div class="card card--padded">
+          <h3 style="margin: 0 0 var(--space-4); font-size: var(--text-md); font-weight: 600">导出配置</h3>
+
+          <!-- Layout selector -->
+          <div class="field">
+            <label class="field__label">布局模式</label>
+            <div class="radio-group">
+              <label class="radio-card">
+                <input type="radio" name="layout" value="one_per_page" x-model="config.layout" />
+                <div class="radio-card__title">一题一页</div>
+                <div class="radio-card__desc">每题单独一页,下方留空答题</div>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="layout" value="two_per_page" x-model="config.layout" />
+                <div class="radio-card__title">两题一页</div>
+                <div class="radio-card__desc">每页两题,节省纸张</div>
+              </label>
+              <label class="radio-card">
+                <input type="radio" name="layout" value="compact" x-model="config.layout" />
+                <div class="radio-card__title">紧凑排列</div>
+                <div class="radio-card__desc">尽量紧凑,适合快速浏览</div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Title -->
+          <div class="field mt-4">
+            <label class="field__label" for="f-title">PDF 标题（可选）</label>
+            <input id="f-title" class="input" type="text" maxlength="60"
+                   placeholder="例如: K1 数学错题 2026-05-31"
+                   x-model="config.title" />
+          </div>
+
+          <!-- Export button -->
+          <button class="btn btn--primary btn--lg btn--block mt-4"
+                  :disabled="exporting"
+                  @click="exportPdf()">
+            <span x-show="!exporting">生成 PDF</span>
+            <span x-show="exporting" class="flex items-center gap-2">
+              <span class="spinner"></span> 生成中…
+            </span>
+          </button>
+
+          <!-- Success message -->
+          <div class="card" style="margin-top: var(--space-4); padding: var(--space-3); background: var(--color-processed-bg); border-color: var(--color-processed-fg)"
+               x-show="pdfUrl">
+            <div style="color: var(--color-processed-fg); font-weight: 600; margin-bottom: var(--space-2)">✓ 导出成功</div>
+            <a :href="pdfUrl" class="btn btn--secondary btn--block" download>下载 PDF</a>
+          </div>
+        </div>
+
+        <!-- Export history -->
+        <div class="card card--padded mt-4" x-show="history.length > 0">
+          <h3 style="margin: 0 0 var(--space-3); font-size: var(--text-md); font-weight: 600">导出历史</h3>
+          <div class="history-list">
+            <template x-for="h in history" :key="h.id">
+              <div class="history-item">
+                <div class="history-item__meta">
+                  <div class="history-item__title" x-text="`${h.child_id} · ${h.subject || '混合'}`"></div>
+                  <div class="history-item__sub" x-text="App.formatDate(h.created_at)"></div>
+                </div>
+                <a :href="App.staticUrl(h.pdf_path)" class="btn btn--ghost btn--sm" download>下载</a>
+              </div>
+            </template>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+
+  </main>
+
+  <script>
+    function exportPage() {
+      return {
+        childId: '',
+        mistakeIds: [],
+        selectedMistakes: [],
+        loading: false,
+        exporting: false,
+        pdfUrl: null,
+
+        config: {
+          layout: 'one_per_page',
+          title: '',
+        },
+
+        history: [],
+
+        async init() {
+          const q = App.parseQuery();
+          this.childId = q.child_id || 'K1';
+          const idsStr = q.ids || '';
+          this.mistakeIds = idsStr.split(',').map((s) => s.trim()).filter(Boolean).map(Number);
+
+          if (!this.mistakeIds.length) {
+            // No IDs in URL — show empty state
+            return;
+          }
+
+          this.loading = true;
+          try {
+            // Fetch all mistakes, then filter by ID
+            const r = await ExamApi.listMistakes({ child_id: this.childId, limit: 200 });
+            const all = (r && r.mistakes) || [];
+            const idSet = new Set(this.mistakeIds);
+            this.selectedMistakes = all.filter((m) => idSet.has(m.id));
+
+            // Pre-fill title
+            if (this.selectedMistakes.length) {
+              const subj = this.selectedMistakes[0].subject;
+              const allSame = this.selectedMistakes.every((m) => m.subject === subj);
+              const today = new Date().toISOString().slice(0, 10);
+              this.config.title = `${this.childId} ${allSame ? subj : '混合'} 错题 ${today}`;
+            }
+
+            // Load history
+            const hr = await ExamApi.getExportHistory(this.childId, 10);
+            this.history = (hr && hr.exports) || [];
+          } catch (e) {
+            App.toast(e.message || '加载失败', 'error');
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async exportPdf() {
+          if (!this.mistakeIds.length) return;
+          this.exporting = true;
+          this.pdfUrl = null;
+          try {
+            const r = await ExamApi.exportPdf(
+              this.childId,
+              this.mistakeIds,
+              this.config.layout,
+              this.config.title
+            );
+            this.pdfUrl = r.pdf_url;
+            App.toast('PDF 生成成功', 'success');
+            // Refresh history
+            const hr = await ExamApi.getExportHistory(this.childId, 10);
+            this.history = (hr && hr.exports) || [];
+          } catch (e) {
+            App.toast(e.message || '导出失败', 'error');
+          } finally {
+            this.exporting = false;
+          }
+        },
+
+        thumbUrl(m) {
+          const path = m.clean_mistake_image_path || m.mistake_image_path || m.thumb_url;
+          return path ? App.staticUrl(path) : '';
+        },
+        onThumbError(ev) { ev.target.style.display = 'none'; },
+      };
+    }
+  </script>
+
+</body>
+</html>
