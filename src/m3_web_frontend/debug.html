@@ -1,209 +1,314 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
-  <title>试卷宝 · 调试面板</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box }
-    body { background:#111827; color:#e5e7eb; font-family:system-ui,-apple-system,sans-serif; min-height:100vh }
-    .container { max-width:1400px; margin:0 auto; padding:16px }
-    h1 { font-size:20px; margin-bottom:16px; display:flex; align-items:center; gap:8px }
-    h1 span { font-size:14px; color:#9ca3af; font-weight:400 }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#111827"/>
+<title>试卷宝 · 调试面板</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111827;color:#e5e7eb;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+.container{max-width:1500px;margin:0 auto;padding:16px}
+h1{font-size:20px;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+h1 span{font-size:14px;color:#9ca3af;font-weight:400}
 
-    .dropzone {
-      border:2px dashed #374151; border-radius:12px; padding:40px 20px;
-      text-align:center; cursor:pointer; transition:all .2s;
-      margin-bottom:20px; background:#1f2937
-    }
-    .dropzone:hover, .dropzone.dragover { border-color:#3b82f6; background:#1e3a5f }
-    .dropzone p { font-size:15px; color:#9ca3af }
-    .dropzone .icon { font-size:40px; margin-bottom:8px }
-    .dropzone input { display:none }
+.dropzone{border:2px dashed #374151;border-radius:12px;padding:32px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px;background:#1f2937}
+.dropzone:hover,.dropzone.dragover{border-color:#3b82f6;background:#1e3a5f}
+.dropzone .icon{font-size:36px;margin-bottom:6px}
+.dropzone p{font-size:15px;color:#9ca3af}
+.dropzone input{display:none}
 
-    .status-bar {
-      display:flex; align-items:center; gap:12px; padding:12px 16px;
-      background:#1f2937; border-radius:8px; margin-bottom:20px;
-      font-size:14px
-    }
-    .status-bar .score { font-weight:700; font-size:24px }
-    .status-bar .score.good { color:#34d399 }
-    .status-bar .score.warn { color:#fbbf24 }
-    .status-bar .meta { color:#9ca3af; font-size:13px }
-    .spinner { display:inline-block; width:18px; height:18px; border:2px solid #374151; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite }
-    @keyframes spin { to { transform:rotate(360deg) } }
+.panel{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.stat{background:#1f2937;border-radius:8px;padding:12px 16px;flex:1;min-width:140px}
+.stat__label{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
+.stat__value{font-size:22px;font-weight:700;margin-top:4px}
+.stat__value.good{color:#34d399}
+.stat__value.warn{color:#fbbf24}
+.stat__value.bad{color:#f87171}
 
-    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px }
-    @media (max-width:900px) { .grid { grid-template-columns:repeat(2,1fr) } }
-    @media (max-width:500px) { .grid { grid-template-columns:1fr } }
+.alert{padding:10px 16px;border-radius:8px;margin-bottom:12px;font-size:13px}
+.alert--warn{background:#78350f;color:#fbbf24}
+.alert--error{background:#7f1d1d;color:#fca5a5}
+.alert:empty{display:none}
 
-    .card { background:#1f2937; border-radius:10px; overflow:hidden }
-    .card__header { padding:10px 14px; border-bottom:1px solid #374151; display:flex; justify-content:space-between; align-items:center }
-    .card__title { font-size:14px; font-weight:600 }
-    .card__badge { font-size:11px; padding:2px 8px; border-radius:10px; background:#374151; color:#9ca3af }
-    .card__image { width:100%; display:block; min-height:200px; background:#111827; object-fit:contain }
-    .card__image[src=""] { display:none }
-    .card__placeholder { display:flex; align-items:center; justify-content:center; min-height:200px; color:#4b5563; font-size:13px }
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:1000px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:550px){.grid{grid-template-columns:1fr}}
 
-    .warnings { padding:12px 16px; background:#78350f; border-radius:8px; margin-bottom:20px; font-size:13px; color:#fbbf24 }
-    .warnings:empty { display:none }
+.card{background:#1f2937;border-radius:10px;overflow:hidden}
+.card__head{padding:10px 14px;border-bottom:1px solid #374151;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.card__title{font-size:14px;font-weight:600}
+.card__badge{font-size:10px;padding:2px 8px;border-radius:10px;background:#374151;color:#9ca3af}
+.card__meta{padding:6px 14px;font-size:11px;color:#6b7280;border-bottom:1px solid #1a1f2b;line-height:1.6}
+.card__meta a{color:#60a5fa;text-decoration:none}
+.card__meta a:hover{text-decoration:underline}
+.card__body{position:relative;min-height:180px;background:#111827;display:flex;align-items:center;justify-content:center}
+.card__img{width:100%;display:block;object-fit:contain;max-height:500px}
+.card__img.hidden{display:none}
+.card__error{color:#f87171;font-size:13px;text-align:center;padding:20px;display:none}
+.card__error.visible{display:block}
+.card__empty{color:#4b5563;font-size:13px;text-align:center;padding:20px}
+.card__actions{padding:8px 14px;display:flex;gap:6px;border-top:1px solid #1a1f2b}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;transition:all .15s;text-decoration:none;display:inline-block}
+.btn--sm{padding:4px 10px;font-size:11px}
+.btn--ghost{background:transparent;color:#9ca3af;border:1px solid #374151}
+.btn--ghost:hover{background:#374151;color:#e5e7eb}
+.btn--danger{background:#7f1d1d;color:#fca5a5}
+.btn--danger:hover{background:#991b1b}
 
-    .btn { padding:8px 20px; border-radius:8px; border:none; cursor:pointer; font-size:13px; transition:all .15s }
-    .btn--secondary { background:#374151; color:#e5e7eb }
-    .btn--secondary:hover { background:#4b5563 }
-    .btn--danger { background:#7f1d1d; color:#fca5a5 }
-    .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px }
-  </style>
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #374151;border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+</style>
 </head>
 <body>
-  <div class="container">
-    <div class="toolbar">
-      <h1>试卷宝 调试面板 <span>拖图→实时处理→6图同屏</span></h1>
-      <button class="btn btn--danger" onclick="cleanup()">🧹 清理调试文件</button>
+<div class="container">
+  <div class="toolbar">
+    <div>
+      <h1>试卷宝 调试面板 <span>拖图 → 实时处理 → 6 图同屏</span></h1>
     </div>
-
-    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-      <div class="icon">📸</div>
-      <p>拖拽试卷照片到这里，或点击选择</p>
-      <p style="font-size:12px;margin-top:4px;color:#6b7280">支持 JPG / PNG / HEIC，处理约 5-15 秒</p>
-      <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this.files[0])" />
-    </div>
-
-    <div class="status-bar hidden" id="statusBar">
-      <div class="spinner hidden" id="spinner"></div>
-      <div>
-        <div id="statusText">准备就绪</div>
-        <div class="meta" id="statusMeta"></div>
-      </div>
-      <div style="margin-left:auto" class="score hidden" id="scoreBadge"></div>
-    </div>
-
-    <div class="warnings hidden" id="warnings"></div>
-
-    <div class="grid" id="grid"></div>
+    <button class="btn btn--danger" onclick="cleanup()">清除调试文件</button>
   </div>
 
-  <script>
-    const STAGES = [
-      { key:'original',        title:'① 原图',        badge:'原始照片' },
-      { key:'processed',       title:'② 预处理',      badge:'旋转/裁边/去阴影' },
-      { key:'red_mask',        title:'③ 红笔 Mask',   badge:'LAB a* 通道' },
-      { key:'handwriting_mask',title:'④ 手写 Mask',   badge:'灰度+形态学' },
-      { key:'combined_mask',   title:'⑤ 合并 Mask',   badge:'红笔 ∪ 手写' },
-      { key:'cleaned',         title:'⑥ 最终清理',    badge:'bgfill+inpaint' },
-    ]
+  <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+    <div class="icon">📸</div>
+    <p>拖拽试卷照片到这里，或点击选择</p>
+    <p style="font-size:12px;margin-top:4px;color:#6b7280">支持 JPG / PNG / HEIC · 处理约 5–15 秒</p>
+    <input type="file" id="fileInput" accept="image/*" onchange="handleFile(this.files[0])"/>
+  </div>
 
-    const grid = document.getElementById('grid')
-    const dropzone = document.getElementById('dropzone')
-    const statusBar = document.getElementById('statusBar')
-    const spinner = document.getElementById('spinner')
-    const statusText = document.getElementById('statusText')
-    const statusMeta = document.getElementById('statusMeta')
-    const scoreBadge = document.getElementById('scoreBadge')
-    const warningsEl = document.getElementById('warnings')
+  <div class="panel hidden" id="statsPanel">
+    <div class="stat"><div class="stat__label">会话 ID</div><div class="stat__value" style="font-size:14px;font-family:monospace" id="statSession">—</div></div>
+    <div class="stat"><div class="stat__label">质量评分</div><div class="stat__value" id="statScore">—</div></div>
+    <div class="stat"><div class="stat__label">图片加载</div><div class="stat__value" id="statLoaded">—</div></div>
+    <div class="stat"><div class="stat__label">错误数</div><div class="stat__value bad" id="statErrors">—</div></div>
+  </div>
 
-    // Build grid cards
-    STAGES.forEach(s => {
-      const card = document.createElement('div')
-      card.className = 'card'
-      card.id = `card-${s.key}`
-      card.innerHTML = `
-        <div class="card__header">
-          <span class="card__title">${s.title}</span>
-          <span class="card__badge">${s.badge}</span>
-        </div>
-        <div class="card__placeholder" id="ph-${s.key}">等待处理…</div>
-        <img class="card__image hidden" id="img-${s.key}" alt="${s.title}" />
-      `
-      grid.appendChild(card)
-    })
+  <div class="alert alert--warn" id="warningsBox"></div>
+  <div class="alert alert--error" id="errorsBox"></div>
 
-    // Drag & drop
-    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover') })
-    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'))
-    dropzone.addEventListener('drop', e => {
-      e.preventDefault(); dropzone.classList.remove('dragover')
-      const f = e.dataTransfer.files[0]
-      if (f) handleFile(f)
-    })
+  <div class="grid" id="grid"></div>
+</div>
 
-    async function handleFile(file) {
-      if (!file || !file.type.startsWith('image/')) { alert('请选择图片文件'); return }
+<script>
+const STAGES = [
+  { key:'original',        title:'① 原图',          badge:'原始照片' },
+  { key:'processed',       title:'② 预处理',        badge:'旋转 / 裁边 / 去阴影' },
+  { key:'red_mask',        title:'③ 红笔 Mask',     badge:'LAB a* 通道检测红色' },
+  { key:'handwriting_mask',title:'④ 手写 Mask',     badge:'灰度 + 形态学过滤' },
+  { key:'combined_mask',   title:'⑤ 合并 Mask',     badge:'红笔 ∪ 手写' },
+  { key:'cleaned',         title:'⑥ 最终清理',       badge:'bgfill + inpaint 修复' },
+]
 
-      statusBar.classList.remove('hidden')
-      spinner.classList.remove('hidden')
-      scoreBadge.classList.add('hidden')
-      warningsEl.classList.add('hidden')
-      warningsEl.textContent = ''
-      statusText.textContent = '上传并处理中…'
-      statusMeta.textContent = file.name
+const grid = document.getElementById('grid')
+const dropzone = document.getElementById('dropzone')
+const warningsBox = document.getElementById('warningsBox')
+const errorsBox = document.getElementById('errorsBox')
+const statsPanel = document.getElementById('statsPanel')
 
-      const fd = new FormData()
-      fd.append('file', file)
+STAGES.forEach(s => {
+  const card = document.createElement('div')
+  card.className = 'card'
+  card.id = `card-${s.key}`
+  card.innerHTML = `
+    <div class="card__head">
+      <div>
+        <div class="card__title">${s.title}</div>
+        <div class="card__badge">${s.badge}</div>
+      </div>
+    </div>
+    <div class="card__meta" id="meta-${s.key}">
+      <span class="card__empty">等待上传…</span>
+    </div>
+    <div class="card__body">
+      <div class="card__empty" id="ph-${s.key}">等待处理…</div>
+      <img class="card__img hidden" id="img-${s.key}" alt="${s.title}" onerror="onImgError('${s.key}', this)" onload="onImgLoad('${s.key}')"/>
+      <div class="card__error" id="err-${s.key}"></div>
+    </div>
+    <div class="card__actions hidden" id="actions-${s.key}">
+      <a class="btn btn--ghost btn--sm" id="open-${s.key}" target="_blank" rel="noopener">新标签打开</a>
+      <a class="btn btn--ghost btn--sm" id="dl-${s.key}" download>下载图片</a>
+    </div>
+  `
+  grid.appendChild(card)
+})
 
-      try {
-        const res = await fetch('/api/debug/process', { method:'POST', body:fd })
-        const data = await res.json()
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover') })
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'))
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('dragover')
+  const f = e.dataTransfer.files[0]
+  if (f) handleFile(f)
+})
 
-        if (!res.ok) {
-          statusText.textContent = '处理失败'
-          statusMeta.textContent = data.error || '未知错误'
-          spinner.classList.add('hidden')
-          if (data.warnings) showWarnings(data.warnings)
-          return
-        }
+async function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) { alert('请选择图片文件'); return }
 
-        spinner.classList.add('hidden')
-        statusText.textContent = `处理完成 · ${data.session_id}`
-        statusMeta.textContent = ''
+  warningsBox.textContent = ''
+  errorsBox.textContent = ''
+  warningsBox.classList.add('hidden')
+  errorsBox.classList.add('hidden')
+  statsPanel.classList.remove('hidden')
 
-        const score = data.quality_score
-        scoreBadge.classList.remove('hidden')
-        scoreBadge.textContent = score.toFixed(2)
-        scoreBadge.className = `score ${score >= 0.6 ? 'good' : 'warn'}`
+  document.getElementById('statSession').textContent = '处理中…'
+  document.getElementById('statScore').textContent = '…'
+  document.getElementById('statScore').className = 'stat__value'
+  document.getElementById('statLoaded').textContent = '…'
+  document.getElementById('statLoaded').className = 'stat__value'
+  document.getElementById('statErrors').textContent = '…'
+  document.getElementById('statErrors').className = 'stat__value'
 
-        if (data.warnings && data.warnings.length) showWarnings(data.warnings)
+  STAGES.forEach(s => {
+    const img = document.getElementById(`img-${s.key}`)
+    img.classList.add('hidden'); img.src = ''
+    document.getElementById(`ph-${s.key}`).textContent = '处理中…'
+    document.getElementById(`ph-${s.key}`).classList.remove('hidden')
+    document.getElementById(`err-${s.key}`).classList.remove('visible')
+    document.getElementById(`err-${s.key}`).textContent = ''
+    document.getElementById(`actions-${s.key}`).classList.add('hidden')
+    document.getElementById(`meta-${s.key}`).innerHTML = '<span class="card__empty">处理中…</span>'
+  })
 
-        // Update all 6 images
-        STAGES.forEach(s => {
-          const url = data.stages[s.key]
-          const img = document.getElementById(`img-${s.key}`)
-          const ph = document.getElementById(`ph-${s.key}`)
-          if (url) {
-            img.src = url + '?t=' + Date.now()
-            img.classList.remove('hidden')
-            ph.style.display = 'none'
-          } else {
-            img.classList.add('hidden')
-            ph.style.display = 'flex'
-            ph.textContent = '未生成'
-          }
-        })
-      } catch (e) {
-        statusText.textContent = '请求失败'
-        statusMeta.textContent = e.message
-        spinner.classList.add('hidden')
+  const fd = new FormData()
+  fd.append('file', file)
+
+  try {
+    const res = await fetch('/api/debug/process', { method:'POST', body:fd })
+    const data = await res.json()
+
+    document.getElementById('statSession').textContent = data.session_id || '—'
+
+    if (!res.ok || data.error) {
+      document.getElementById('statScore').textContent = '失败'
+      document.getElementById('statScore').className = 'stat__value bad'
+      document.getElementById('statLoaded').textContent = '0/6'
+      document.getElementById('statErrors').textContent = '1'
+
+      if (data.errors && data.errors.length) {
+        errorsBox.innerHTML = '<strong>系统错误:</strong><br>' + data.errors.map(e => '· ' + e).join('<br>')
+        errorsBox.classList.remove('hidden')
       }
+      if (data.error) {
+        errorsBox.innerHTML = (errorsBox.innerHTML ? errorsBox.innerHTML + '<br>' : '<strong>系统错误:</strong><br>') + '· ' + data.error
+        errorsBox.classList.remove('hidden')
+      }
+      STAGES.forEach(s => {
+        document.getElementById(`ph-${s.key}`).textContent = '处理失败'
+        document.getElementById(`meta-${s.key}`).innerHTML = '<span style="color:#f87171">处理失败</span>'
+      })
+      return
     }
 
-    function showWarnings(ws) {
-      warningsEl.classList.remove('hidden')
-      warningsEl.innerHTML = '<strong>⚠ Warnings:</strong><br>' + ws.map(w => `· ${w}`).join('<br>')
+    const score = data.quality_score
+    const scoreEl = document.getElementById('statScore')
+    scoreEl.textContent = score.toFixed(2)
+    scoreEl.className = 'stat__value ' + (score >= 0.6 ? 'good' : 'warn')
+
+    if (data.warnings && data.warnings.length) {
+      warningsBox.innerHTML = '<strong>算法提醒 (warning):</strong><br>' + data.warnings.map(w => '· ' + w).join('<br>')
+      warningsBox.classList.remove('hidden')
+    }
+    if (data.errors && data.errors.length) {
+      errorsBox.innerHTML = '<strong>系统错误 (error):</strong><br>' + data.errors.map(e => '· ' + e).join('<br>')
+      errorsBox.classList.remove('hidden')
+      document.getElementById('statErrors').textContent = data.errors.length
+    } else {
+      document.getElementById('statErrors').textContent = '0'
+      document.getElementById('statErrors').className = 'stat__value good'
     }
 
-    async function cleanup() {
-      try {
-        await fetch('/api/debug/cleanup', { method:'POST' })
-        alert('调试文件已清理')
-        STAGES.forEach(s => {
-          document.getElementById(`img-${s.key}`).classList.add('hidden')
-          document.getElementById(`img-${s.key}`).src = ''
-          document.getElementById(`ph-${s.key}`).style.display = 'flex'
-          document.getElementById(`ph-${s.key}`).textContent = '等待处理…'
-        })
-      } catch(e) { alert('清理失败: ' + e.message) }
-    }
-  </script>
+    let loaded = 0
+    STAGES.forEach(s => {
+      const stage = data.stages[s.key]
+      const meta = document.getElementById(`meta-${s.key}`)
+      const img = document.getElementById(`img-${s.key}`)
+      const ph = document.getElementById(`ph-${s.key}`)
+      const err = document.getElementById(`err-${s.key}`)
+      const actions = document.getElementById(`actions-${s.key}`)
+
+      if (!stage || !stage.url) {
+        ph.textContent = '未生成'
+        ph.classList.remove('hidden')
+        meta.innerHTML = '<span style="color:#f87171">图片未生成</span>'
+        return
+      }
+
+      ph.classList.add('hidden')
+      const info = []
+      info.push(`<strong>URL:</strong> <a href="${stage.url}" target="_blank" rel="noopener">${stage.url}</a>`)
+      if (stage.file) info.push(`文件: ${stage.file}`)
+      if (stage.width && stage.height) info.push(`尺寸: ${stage.width} × ${stage.height} px`)
+      if (stage.size_kb !== null) info.push(`大小: ${stage.size_kb} KB`)
+      meta.innerHTML = info.join(' &nbsp;|&nbsp; ')
+
+      document.getElementById(`open-${s.key}`).href = stage.url
+      document.getElementById(`dl-${s.key}`).href = stage.url
+      document.getElementById(`dl-${s.key}`).setAttribute('download', stage.file || `${s.key}.jpg`)
+
+      img.src = stage.url
+      img.classList.remove('hidden')
+      img.dataset.key = s.key
+    })
+
+    document.getElementById('statLoaded').textContent = `${loaded}/6`
+
+  } catch (e) {
+    document.getElementById('statScore').textContent = '网络错误'
+    document.getElementById('statScore').className = 'stat__value bad'
+    errorsBox.innerHTML = '<strong>系统错误 (error):</strong><br>· 请求失败: ' + e.message
+    errorsBox.classList.remove('hidden')
+    STAGES.forEach(s => {
+      document.getElementById(`ph-${s.key}`).textContent = '请求失败'
+    })
+  }
+}
+
+function onImgLoad(key) {
+  const loaded = document.getElementById('statLoaded')
+  const actions = document.getElementById(`actions-${key}`)
+  actions.classList.remove('hidden')
+  const current = parseInt(loaded.textContent) || 0
+  loaded.textContent = (current + 1) + '/6'
+  loaded.className = 'stat__value good'
+}
+
+function onImgError(key, img) {
+  const err = document.getElementById(`err-${key}`)
+  err.textContent = `加载失败: ${img.src}`
+  err.classList.add('visible')
+  img.classList.add('hidden')
+  document.getElementById(`ph-${key}`).classList.remove('hidden')
+  document.getElementById(`ph-${key}`).textContent = '图片加载失败'
+  document.getElementById(`meta-${key}`).innerHTML = '<span style="color:#f87171">URL 404 或网络错误: ' + img.src + '</span>'
+
+  const loadedEl = document.getElementById('statLoaded')
+  loadedEl.className = 'stat__value warn'
+  const errCount = document.querySelectorAll('.card__error.visible').length
+  document.getElementById('statErrors').textContent = errCount || '—'
+  document.getElementById('statErrors').className = 'stat__value ' + (errCount > 0 ? 'bad' : 'good')
+}
+
+async function cleanup() {
+  if (!confirm('确认清除所有调试文件？')) return
+  try {
+    await fetch('/api/debug/cleanup', { method:'POST' })
+    STAGES.forEach(s => {
+      document.getElementById(`img-${s.key}`).classList.add('hidden')
+      document.getElementById(`img-${s.key}`).src = ''
+      document.getElementById(`ph-${s.key}`).classList.remove('hidden')
+      document.getElementById(`ph-${s.key}`).textContent = '等待上传…'
+      document.getElementById(`err-${s.key}`).classList.remove('visible')
+      document.getElementById(`err-${s.key}`).textContent = ''
+      document.getElementById(`actions-${s.key}`).classList.add('hidden')
+      document.getElementById(`meta-${s.key}`).innerHTML = '<span class="card__empty">等待上传…</span>'
+    })
+    warningsBox.classList.add('hidden')
+    errorsBox.classList.add('hidden')
+    statsPanel.classList.add('hidden')
+    alert('已清理')
+  } catch(e) { alert('清理失败: ' + e.message) }
+}
+</script>
 </body>
 </html>
