@@ -48,9 +48,34 @@ def run_one_sample(sample_path, preset, client, out_dir):
             result["ok"] = True
             result["output_path"] = str(out_path)
         elif preset["pipeline"] == "enhance_then_erase":
-            # B-line in Commit 3
-            result["ok"] = False
-            result["error"] = "B线 Commit 3 实现"
+            t_enhance = time.monotonic()
+            e = client.crop_enhance_image(image_bytes, **preset["enhance_params"])
+            with open(res_out / f"{preset['name']}_enhance.json", "w", encoding="utf-8") as f:
+                json.dump(e.get("response_json", {}), f, ensure_ascii=False, indent=2)
+            result["x_request_id"] = e.get("x_request_id", "")
+            if not e["ok"]:
+                result["duration_ms"] = e.get("duration_ms", 0)
+                result["error"] = e.get("error", "unknown")
+                result["stage_failed"] = "crop_enhance_image"
+                return result
+            enhanced_path = out_dir / f"{preset['name']}_enhanced.jpg"
+            enhanced_path.write_bytes(e["image_bytes"])
+            result["enhanced_path"] = str(enhanced_path)
+
+            t_erase = time.monotonic()
+            er = client.handwritten_erase(e["image_bytes"], **preset["erase_params"])
+            with open(res_out / f"{preset['name']}_erase.json", "w", encoding="utf-8") as f:
+                json.dump(er.get("response_json", {}), f, ensure_ascii=False, indent=2)
+            result["duration_ms"] = e.get("duration_ms", 0) + er.get("duration_ms", 0)
+            result["x_request_id"] = result["x_request_id"] + " | " + er.get("x_request_id", "")
+            if not er["ok"]:
+                result["error"] = er.get("error", "unknown")
+                result["stage_failed"] = "handwritten_erase"
+                return result
+            out_path = out_dir / f"{preset['name']}.jpg"
+            out_path.write_bytes(er["image_bytes"])
+            result["ok"] = True
+            result["output_path"] = str(out_path)
         else:
             result["error"] = f"unknown pipeline: {preset['pipeline']}"
     except Exception as e:
