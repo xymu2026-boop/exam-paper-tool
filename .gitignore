@@ -45,3 +45,4 @@ experiments/*/output/
 # === 日志 ===
 *.log
 logs/
+.env
