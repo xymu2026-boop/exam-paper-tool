@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config
 from .deps import get_db
 from .routes import exports_router, mistakes_router, papers_router
+from .routes.debug import router as debug_router
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(papers_router)
     app.include_router(mistakes_router)
     app.include_router(exports_router)
+    app.include_router(debug_router)
 
     # --- Uniform error envelope ----------------------------------------
     @app.exception_handler(HTTPException)

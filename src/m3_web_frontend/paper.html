@@ -8,11 +8,89 @@
   <link rel="stylesheet" href="static/style.css" />
 
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.7/dist/cdn.min.js"></script>
-  <!-- <script defer src="static/vendor/alpinejs@3.min.js"></script> -->
 
   <script src="static/api.js"></script>
   <script src="static/app.js"></script>
   <script src="static/crop.js"></script>
+
+  <style>
+    /* ── Stage tabs ── */
+    .stage-tabs {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: var(--space-2);
+    }
+    .stage-tab {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .stage-tab:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .stage-tab--active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .stage-tab__badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-left: 4px;
+      background: rgba(255,255,255,0.25);
+    }
+    .stage-tab--active .stage-tab__badge {
+      background: rgba(255,255,255,0.3);
+    }
+
+    /* ── Mask overlay toggle ── */
+    .mask-toggle-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 8px 12px;
+      background: var(--bg-subtle);
+      border-radius: 6px;
+      margin-bottom: var(--space-3);
+      font-size: 13px;
+    }
+    .mask-toggle-bar label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    /* ── Stage label ── */
+    .stage-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .stage-label__dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-red    { background: #ef4444; }
+    .dot-blue   { background: #3b82f6; }
+    .dot-purple { background: #8b5cf6; }
+    .dot-green  { background: #22c55e; }
+    .dot-gray   { background: #6b7280; }
+    .dot-amber  { background: #f59e0b; }
+  </style>
 </head>
 <body>
 
@@ -51,7 +129,7 @@
       </div>
       <div class="flex items-center gap-2">
         <span x-show="paper" :class="paper && App.statusBadgeClass(paper.status)" x-text="paper && App.statusLabel(paper.status)"></span>
-        <button class="btn btn--secondary btn--sm" x-show="paper && paper.status !== 'processed'"
+        <button class="btn btn--secondary btn--sm"
                 :disabled="processing"
                 @click="reprocess()">
           <span x-show="!processing">重新处理</span>
@@ -60,55 +138,102 @@
       </div>
     </div>
 
-    <!-- Multi-stage tab switcher -->
-    <div class="image-tabs" role="tablist" aria-label="切换查看阶段">
-      <template x-for="tab in tabs" :key="tab.key">
-        <button role="tab"
-                :class="{ 'tab--active': activeTab === tab.key }"
-                :aria-pressed="activeTab === tab.key"
-                @click="switchTab(tab.key)"
-                x-text="tab.label"></button>
-      </template>
+    <!-- ── Stage tabs ── -->
+    <div class="stage-tabs" role="tablist" aria-label="切换处理阶段">
+      <button class="stage-tab" :class="{ 'stage-tab--active': activeStage === 'original' }"
+              @click="switchStage('original')">原图</button>
+      <button class="stage-tab" :class="{ 'stage-tab--active': activeStage === 'preprocessed' }"
+              @click="switchStage('preprocessed')" x-show="stageUrls.preprocessed">
+        <span class="stage-label">
+          <span class="stage-label__dot dot-amber"></span>预处理
+        </span>
+      </button>
+      <button class="stage-tab" :class="{ 'stage-tab--active': activeStage === 'red_mask' }"
+              @click="switchStage('red_mask')" x-show="stageUrls.red_mask">
+        <span class="stage-label">
+          <span class="stage-label__dot dot-red"></span>红笔 mask
+        </span>
+      </button>
+      <button class="stage-tab" :class="{ 'stage-tab--active': activeStage === 'hw_mask' }"
+              @click="switchStage('hw_mask')" x-show="stageUrls.hw_mask">
+        <span class="stage-label">
+          <span class="stage-label__dot dot-blue"></span>手写 mask
+        </span>
+      </button>
+      <button class="stage-tab" :class="{ 'stage-tab--active': activeStage === 'combined_mask' }"
+              @click="switchStage('combined_mask')" x-show="stageUrls.combined_mask">
+        <span class="stage-label">
+          <span class="stage-label__dot dot-purple"></span>合并 mask
+        </span>
+      </button>
+      <button class="stage-tab" :class="{ 'stage-tab--active': activeStage === 'cleaned' }"
+              @click="switchStage('cleaned')">
+        <span class="stage-label">
+          <span class="stage-label__dot dot-green"></span>清理图
+        </span>
+        <span class="stage-tab__badge" x-show="boxes.length" x-text="boxes.length"></span>
+      </button>
     </div>
 
-    <!-- Stage image viewer -->
-    <section style="margin-top: var(--space-3)">
-      <template x-for="tab in tabs" :key="tab.key">
-        <div class="image-pane" x-show="activeTab === tab.key">
-          <div class="image-pane__label">
-            <span x-text="tab.label"></span>
-            <span class="text-faint text-sm" x-text="tab.desc"></span>
-          </div>
-          <div class="image-pane__viewport" x-ref="viewport">
-            <!-- 最终清理图: 叠加 Canvas 框选 -->
-            <template x-if="tab.key === 'cleaned'">
-              <div>
-                <img x-ref="cleanedImg"
-                     x-show="cleanedUrl"
-                     :src="cleanedUrl"
-                     alt="擦除图"
-                     crossorigin="anonymous"
-                     @load="onCleanedLoad($event)" />
-                <canvas x-ref="canvas"
-                        x-show="cleanedUrl"
-                        aria-label="错题框选区域"></canvas>
-              </div>
-            </template>
-            <!-- 其他阶段: 纯展示 -->
-            <template x-if="tab.key !== 'cleaned'">
-              <img x-show="tab.url" :src="tab.url" :alt="tab.label" />
-            </template>
-            <div class="empty-state" x-show="!tab.url">
-              <div class="empty-state__icon">⏳</div>
-              <div class="text-faint" x-text="tab.emptyText || '暂无图片'"></div>
-            </div>
+    <!-- ── Mask overlay toggle (only visible on mask stages) ── -->
+    <div class="mask-toggle-bar" x-show="isMaskStage()">
+      <label>
+        <input type="checkbox" x-model="maskOverlay" @change="onMaskOverlayChange()" />
+        叠加到预处理图上查看
+      </label>
+      <span class="text-faint text-sm">
+        (选中时 mask 白色区域以红色半透明叠在原图上)
+      </span>
+    </div>
+
+    <!-- ── Single image viewer ── -->
+    <section class="compare-grid" style="margin-top: var(--space-3)">
+      <div class="image-pane" style="grid-column: 1 / -1">
+        <div class="image-pane__label">
+          <span x-text="stageLabel()"></span>
+          <span class="text-faint text-sm" x-show="activeStage === 'cleaned' && boxes.length" x-text="`${boxes.length} 个框`"></span>
+        </div>
+        <div class="image-pane__viewport" x-ref="viewport" style="position: relative">
+          <!-- Mask overlay base (preprocessed) -->
+          <img x-show="maskOverlay && isMaskStage()"
+               :src="stageUrls.preprocessed"
+               alt="预处理底图"
+               style="position: absolute; top: 0; left: 0; width: 100%; height: auto; z-index: 1" />
+          <!-- Mask overlay on top -->
+          <canvas x-ref="maskOverlayCanvas"
+                  x-show="maskOverlay && isMaskStage()"
+                  style="position: absolute; top: 0; left: 0; width: 100%; height: auto; z-index: 2; pointer-events: none"
+                  aria-label="mask 叠加层"></canvas>
+
+          <!-- Normal stage image -->
+          <img :src="currentStageUrl()"
+               :alt="stageLabel()"
+               @load="onStageImageLoad($event)"
+               x-show="!maskOverlay || !isMaskStage()" />
+
+          <!-- Canvas for box drawing (only on cleaned stage) -->
+          <canvas x-ref="canvas"
+                  x-show="activeStage === 'cleaned'"
+                  aria-label="错题框选区域"
+                  style="position: absolute; top: 0; left: 0"></canvas>
+
+          <div class="empty-state" x-show="!currentStageUrl()">
+            <div class="empty-state__icon">🖼️</div>
+            <div class="text-faint">图片暂未生成</div>
+            <button class="btn btn--secondary btn--sm" @click="reprocess()">立即处理</button>
           </div>
         </div>
-      </template>
+      </div>
     </section>
 
-    <!-- Box list / metadata editor -->
-    <section style="margin-top: var(--space-5)">
+    <!-- Mobile tab switcher (kept for backward compat) -->
+    <div class="image-tabs show-mobile" role="tablist" aria-label="切换图片" x-show="false">
+      <button role="tab" @click="switchStage('cleaned')">擦除图（可框选）</button>
+      <button role="tab" @click="switchStage('original')">原图</button>
+    </div>
+
+    <!-- ── Box list / metadata editor ── -->
+    <section style="margin-top: var(--space-5)" x-show="activeStage === 'cleaned'">
       <div class="section-head">
         <h2 class="section-head__title">错题框选 (<span x-text="boxes.length"></span>)</h2>
         <div class="flex gap-2">
@@ -126,7 +251,7 @@
         <div class="empty-state" style="padding: var(--space-8) var(--space-4)">
           <div class="empty-state__icon">✏️</div>
           <div class="empty-state__title">还没有框选错题</div>
-          <div>在左侧/上方擦除图上拖拽鼠标或手指,即可圈出错题区域。</div>
+          <div>在清理图上拖拽鼠标或手指，即可圈出错题区域。</div>
         </div>
       </template>
 
@@ -175,21 +300,17 @@
       return {
         paperId: null,
         paper: null,
-        originalUrl: '',
-        cleanedUrl: '',
-        processedUrl: '',
-        redMaskUrl: '',
-        hwMaskUrl: '',
-        combinedMaskUrl: '',
-        activeTab: 'cleaned',
-
-        tabs: [
-          { key: 'original',  label: '① 原图',     desc: '上传的原始试卷照片', emptyText: '还没有原图' },
-          { key: 'processed',  label: '② 预处理',   desc: '轻量处理: 旋转/裁边/去阴影', emptyText: '预处理图未生成' },
-          { key: 'hw_mask',    label: '③ 手写Mask', desc: '白色=识别的手写笔迹(铅笔/黑笔)', emptyText: 'Mask未生成' },
-          { key: 'red_mask',   label: '④ 红笔Mask', desc: '白色=识别的红色批改/圈画', emptyText: 'Mask未生成' },
-          { key: 'cleaned',    label: '⑤ 最终清理', desc: '擦除手写+红笔后的干净试卷(可框选错题)', emptyText: '擦除图正在生成…' },
-        ],
+        // ── V2 multi-stage ──
+        activeStage: 'cleaned',
+        stageUrls: {
+          original: '',
+          preprocessed: '',
+          red_mask: '',
+          hw_mask: '',
+          combined_mask: '',
+          cleaned: '',
+        },
+        maskOverlay: false,
 
         cropper: null,
         boxes: [],
@@ -212,54 +333,137 @@
           try {
             const p = await ExamApi.getPaper(this.paperId);
             this.paper = p;
+            // Build all stage URLs
+            this.stageUrls.original = p.original_url || '';
+            this.stageUrls.preprocessed = p.processed_url || App.staticUrl(p.processed_path);
+            this.stageUrls.red_mask = p.red_mask_url || '';
+            this.stageUrls.hw_mask = p.handwriting_mask_url || '';
+            this.stageUrls.combined_mask = p.combined_mask_url || '';
+            this.stageUrls.cleaned = p.cleaned_url || App.staticUrl(p.cleaned_path || p.processed_path);
 
-            const base = p.original_path ? p.original_path.replace(/original\.jpg$/, '') : '';
-            const staticBase = App.staticUrl || ((path) => '/static/data/' + path);
-
-            this.originalUrl  = p.original_url  || staticBase(p.original_path);
-            this.cleanedUrl   = p.cleaned_url   || staticBase(p.cleaned_path || p.processed_path);
-            this.processedUrl = p.processed_url || (base ? staticBase(base + 'processed.jpg') : '');
-            this.redMaskUrl   = p.red_mask_url  || (base ? staticBase(base + 'red_mask.jpg') : '');
-            this.hwMaskUrl    = p.hw_mask_url   || (base ? staticBase(base + 'handwriting_mask.jpg') : '');
-            this.combinedMaskUrl = (base ? staticBase(base + 'combined_mask.jpg') : '');
-
-            this.updateTabUrls();
+            // Auto-switch to highest available stage
+            if (this.stageUrls.cleaned) this.activeStage = 'cleaned';
+            else if (this.stageUrls.combined_mask) this.activeStage = 'combined_mask';
+            else if (this.stageUrls.preprocessed) this.activeStage = 'preprocessed';
+            else this.activeStage = 'original';
           } catch (e) {
             App.toast(e.message || '试卷加载失败', 'error');
             return;
           }
 
+          // Existing mistakes
           try {
             const r = await ExamApi.listMistakes({ paper_id: this.paperId, limit: 100 });
             this.existingMistakes = (r && r.mistakes) || [];
           } catch (e) { /* non-fatal */ }
         },
 
-        updateTabUrls() {
-          const map = {
-            original: this.originalUrl,
-            processed: this.processedUrl,
-            hw_mask: this.hwMaskUrl,
-            red_mask: this.redMaskUrl,
-            cleaned: this.cleanedUrl,
-          };
-          this.tabs = this.tabs.map(t => ({ ...t, url: map[t.key] || '' }));
-        },
-
-        switchTab(key) {
-          this.activeTab = key;
-          if (key === 'cleaned' && this.cleanedUrl && !this.cropper) {
-            this.$nextTick(() => {
-              const img = this.$refs.cleanedImg;
-              if (img) this.onCleanedLoad({ target: img });
-            });
+        // ── Stage switching ──
+        switchStage(stage) {
+          this.activeStage = stage;
+          this.maskOverlay = false; // reset overlay on switch
+          // If switching to cleaned or original, ensure cropper is initialized
+          if (stage === 'cleaned') {
+            this.$nextTick(() => this.initCropperIfNeeded());
           }
         },
 
-        onCleanedLoad(ev) {
-          const img = ev.target;
+        isMaskStage() {
+          return ['red_mask', 'hw_mask', 'combined_mask'].includes(this.activeStage);
+        },
+
+        stageLabel() {
+          const labels = {
+            original: '原图',
+            preprocessed: '预处理（纠偏·去阴影·裁边）',
+            red_mask: '红笔识别 mask',
+            hw_mask: '手写识别 mask',
+            combined_mask: '合并 mask（红笔+手写）',
+            cleaned: '清理图（在此框选错题）',
+          };
+          return labels[this.activeStage] || '';
+        },
+
+        currentStageUrl() {
+          return this.stageUrls[this.activeStage] || '';
+        },
+
+        // ── Mask overlay ──
+        onMaskOverlayChange() {
+          if (!this.maskOverlay || !this.isMaskStage()) return;
+          this.$nextTick(() => this.renderMaskOverlay());
+        },
+
+        async renderMaskOverlay() {
+          const img = new Image();
+          const maskUrl = this.stageUrls[this.activeStage];
+          const baseUrl = this.stageUrls.preprocessed;
+          if (!maskUrl || !baseUrl) return;
+
+          // Load the mask image and draw it as a red overlay
+          img.onload = () => {
+            const canvas = this.$refs.maskOverlayCanvas;
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            // Match the preprocessed image display size
+            const viewport = this.$refs.viewport;
+            const preprocessedImg = viewport ? viewport.querySelector('img[src]') : null;
+            const displayW = preprocessedImg ? preprocessedImg.clientWidth : img.naturalWidth;
+            const displayH = preprocessedImg ? preprocessedImg.clientHeight : img.naturalHeight;
+            canvas.width = displayW;
+            canvas.height = displayH;
+
+            // Draw mask: white pixels → red semi-transparent overlay
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = displayW;
+            offCanvas.height = displayH;
+            const offCtx = offCanvas.getContext('2d');
+            offCtx.drawImage(img, 0, 0, displayW, displayH);
+            const imageData = offCtx.getImageData(0, 0, displayW, displayH);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+              const gray = data[i]; // R channel ≈ gray level
+              if (gray > 127) {
+                // White mask pixel → red overlay
+                data[i] = 255;     // R
+                data[i + 1] = 0;   // G
+                data[i + 2] = 0;   // B
+                data[i + 3] = 120; // Alpha
+              } else {
+                data[i + 3] = 0;   // Transparent
+              }
+            }
+            offCtx.putImageData(imageData, 0, 0);
+            ctx.clearRect(0, 0, displayW, displayH);
+            ctx.drawImage(offCanvas, 0, 0);
+          };
+          img.crossOrigin = 'anonymous';
+          img.src = maskUrl + (maskUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
+        },
+
+        // ── Image handling ──
+        onStageImageLoad(ev) {
+          if (this.activeStage === 'cleaned') {
+            this.initCropper(ev.target);
+          }
+          if (this.maskOverlay && this.isMaskStage()) {
+            this.renderMaskOverlay();
+          }
+        },
+
+        initCropperIfNeeded() {
+          const imgEl = this.$refs.viewport
+            ? this.$refs.viewport.querySelector('img[src]:not([style*="absolute"])')
+            : null;
+          if (imgEl && imgEl.complete) {
+            this.initCropper(imgEl);
+          }
+        },
+
+        initCropper(img) {
           const canvas = this.$refs.canvas;
           if (!img || !canvas) return;
+
           requestAnimationFrame(() => {
             if (this.cropper) this.cropper.destroy();
             this.cropper = createCropper({
@@ -268,6 +472,7 @@
               onChange: (boxes) => { this.boxes = boxes; },
               onSelect: (id) => { this.selectedBoxId = id; },
             });
+            // Hydrate from server
             const initial = (this.existingMistakes || []).map((m) => ({
               id: m.id,
               x: m.crop_x, y: m.crop_y,
@@ -279,11 +484,15 @@
           });
         },
 
-        selectBox(id) { if (this.cropper) this.cropper.selectBox(id); },
+        selectBox(id) {
+          if (this.cropper) this.cropper.selectBox(id);
+        },
 
         updateBoxField(id, key, value) {
           if (!this.cropper) return;
-          this.cropper.updateBox(id, { [key]: value });
+          const partial = {};
+          partial[key] = value;
+          this.cropper.updateBox(id, partial);
         },
 
         removeBox(b) {
@@ -341,7 +550,9 @@
             }
             if (failCount === 0) App.toast(`已保存 ${okCount} 个错题`, 'success');
             else App.toast(`保存完成,${okCount} 成功 / ${failCount} 失败`, 'error');
-          } finally { this.saving = false; }
+          } finally {
+            this.saving = false;
+          }
         },
 
         async reprocess() {
@@ -350,19 +561,21 @@
           try {
             await ExamApi.processPaper(this.paperId);
             App.toast('处理完成', 'success');
+            // Reload
             const p = await ExamApi.getPaper(this.paperId);
             this.paper = p;
-            const base = p.original_path ? p.original_path.replace(/original\.jpg$/, '') : '';
-            const staticBase = App.staticUrl || ((path) => '/static/data/' + path);
-            this.originalUrl  = p.original_url  || staticBase(p.original_path);
-            this.cleanedUrl   = p.cleaned_url   || staticBase(p.cleaned_path);
-            this.processedUrl = p.processed_url || (base ? staticBase(base + 'processed.jpg') : '');
-            this.redMaskUrl   = p.red_mask_url  || (base ? staticBase(base + 'red_mask.jpg') : '');
-            this.hwMaskUrl    = p.hw_mask_url   || (base ? staticBase(base + 'handwriting_mask.jpg') : '');
-            this.updateTabUrls();
+            this.stageUrls.original = p.original_url || '';
+            this.stageUrls.preprocessed = p.processed_url || App.staticUrl(p.processed_path);
+            this.stageUrls.red_mask = p.red_mask_url || '';
+            this.stageUrls.hw_mask = p.handwriting_mask_url || '';
+            this.stageUrls.combined_mask = p.combined_mask_url || '';
+            this.stageUrls.cleaned = p.cleaned_url || App.staticUrl(p.cleaned_path || p.processed_path);
+            this.activeStage = 'cleaned';
           } catch (e) {
             App.toast(e.message || '处理失败', 'error');
-          } finally { this.processing = false; }
+          } finally {
+            this.processing = false;
+          }
         },
       };
     }

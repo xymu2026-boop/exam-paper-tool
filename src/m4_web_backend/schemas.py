@@ -62,6 +62,9 @@ class PaperOut(BaseModel):
     original_path: str
     processed_path: Optional[str] = None
     cleaned_path: Optional[str] = None
+    red_mask_path: Optional[str] = None
+    handwriting_mask_path: Optional[str] = None
+    combined_mask_path: Optional[str] = None
     upload_time: str
     status: str
     quality_score: Optional[float] = None
@@ -69,6 +72,9 @@ class PaperOut(BaseModel):
     original_url: Optional[str] = None
     processed_url: Optional[str] = None
     cleaned_url: Optional[str] = None
+    red_mask_url: Optional[str] = None
+    handwriting_mask_url: Optional[str] = None
+    combined_mask_url: Optional[str] = None
 
 
 class PaperListResponse(BaseModel):

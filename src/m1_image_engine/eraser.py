@@ -1,83 +1,47 @@
-"""阶段3: 擦除与修复。
-默认 inpaint 修复, 大面积红色用背景色填充。
-"""
-
-from __future__ import annotations
-
-import cv2
-import numpy as np
-
+"""Stage 3: Erasure using bgfill + inpaint."""
+import cv2, numpy as np
 from .utils import load_bgr, load_gray, save_bgr_jpeg
 
-
-def _sample_background_color(img_bgr, mask, sample_radius=20):
-    mask_bool = mask > 127
-    if mask_bool.sum() == 0:
-        return img_bgr.copy()
-    result = img_bgr.copy()
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (sample_radius, sample_radius))
-    dilated = cv2.dilate((mask_bool.astype(np.uint8)) * 255, k)
-    ring = (dilated > 127) & (~mask_bool)
+def _bg_fill(bgr, mask, r=20):
+    mb = mask > 127
+    if mb.sum() == 0: return bgr.copy()
+    res = bgr.copy()
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r))
+    dil = cv2.dilate((mb.astype(np.uint8))*255, k)
+    ring = (dil > 127) & (~mb)
     if ring.sum() == 0:
-        inpaint_mask = (mask_bool.astype(np.uint8)) * 255
-        return cv2.inpaint(img_bgr, inpaint_mask, 5, cv2.INPAINT_TELEA)
-    bg_b = int(np.median(img_bgr[:, :, 0][ring]))
-    bg_g = int(np.median(img_bgr[:, :, 1][ring]))
-    bg_r = int(np.median(img_bgr[:, :, 2][ring]))
-    result[mask_bool] = (bg_b, bg_g, bg_r)
-    return result
+        return cv2.inpaint(bgr, (mb.astype(np.uint8))*255, 5, cv2.INPAINT_TELEA)
+    for c in range(3):
+        res[:,:,c][mb] = int(np.median(bgr[:,:,c][ring]))
+    return res
 
-
-def _apply_mask_array(img_bgr, mask_gray, method="inpaint"):
-    if mask_gray.shape[:2] != img_bgr.shape[:2]:
-        mask_gray = cv2.resize(mask_gray, (img_bgr.shape[1], img_bgr.shape[0]),
-                               interpolation=cv2.INTER_NEAREST)
-    if mask_gray.dtype != np.uint8:
-        mask_gray = mask_gray.astype(np.uint8)
-
+def _apply_mask_array(bgr, mask, method="inpaint"):
+    if mask.shape[:2] != bgr.shape[:2]:
+        mask = cv2.resize(mask, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
+    if mask.dtype != np.uint8: mask = mask.astype(np.uint8)
     if method == "white":
-        result = img_bgr.copy()
-        result[mask_gray > 127] = (255, 255, 255)
-        return result
-    if method == "bgfill":
-        return _sample_background_color(img_bgr, mask_gray)
-    inpaint_mask = ((mask_gray > 127).astype(np.uint8)) * 255
-    return cv2.inpaint(img_bgr, inpaint_mask, 5, cv2.INPAINT_TELEA)
+        res = bgr.copy(); res[mask > 127] = (255,255,255); return res
+    if method == "bgfill": return _bg_fill(bgr, mask)
+    return cv2.inpaint(bgr, ((mask > 127).astype(np.uint8))*255, 5, cv2.INPAINT_TELEA)
 
-
-def apply_mask(input_path, mask_path, output_path, method="inpaint"):
+def apply_mask(inp, mp, outp, method="inpaint"):
     try:
-        img = load_bgr(input_path)
-        if img is None:
-            return False
-        mask = load_gray(mask_path)
-        if mask is None:
-            return False
-        cleaned = _apply_mask_array(img, mask, method=method)
-        return save_bgr_jpeg(cleaned, output_path)
-    except Exception:
-        return False
+        bgr = load_bgr(inp); m = load_gray(mp)
+        if bgr is None or m is None: return False
+        return save_bgr_jpeg(_apply_mask_array(bgr, m, method), outp)
+    except: return False
 
-
-def apply_masks_separately(preprocessed_path, red_mask_path, hw_mask_path, output_path):
+def apply_masks_separately(preproc, redp, hwp, outp):
     try:
-        img = load_bgr(preprocessed_path)
-        if img is None:
-            return False
-
-        if red_mask_path is not None:
-            red_mask = load_gray(red_mask_path)
-            if red_mask is not None and red_mask.any():
-                img = _apply_mask_array(img, red_mask, method="bgfill")
-
-        if hw_mask_path is not None:
-            hw_mask = load_gray(hw_mask_path)
-            if hw_mask is not None and hw_mask.any():
-                img = _apply_mask_array(img, hw_mask, method="inpaint")
-
-        return save_bgr_jpeg(img, output_path)
-    except Exception:
-        return False
-
+        bgr = load_bgr(preproc)
+        if bgr is None: return False
+        if redp is not None:
+            rm = load_gray(redp)
+            if rm is not None and rm.any(): bgr = _apply_mask_array(bgr, rm, "bgfill")
+        if hwp is not None:
+            hm = load_gray(hwp)
+            if hm is not None and hm.any(): bgr = _apply_mask_array(bgr, hm, "inpaint")
+        return save_bgr_jpeg(bgr, outp)
+    except: return False
 
 __all__ = ["apply_mask", "apply_masks_separately", "_apply_mask_array"]

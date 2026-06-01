@@ -170,6 +170,9 @@ async def process_paper_route(
             status='processed',
             processed_path=result.processed_path,
             cleaned_path=result.cleaned_path,
+            red_mask_path=result.red_mask_path,
+            handwriting_mask_path=result.handwriting_mask_path,
+            combined_mask_path=result.combined_mask_path,
             quality_score=result.quality_score,
         )
         return ProcessResponse(

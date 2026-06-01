@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS paper (
     original_path TEXT NOT NULL,
     processed_path TEXT,
     cleaned_path TEXT,
+    red_mask_path TEXT,
+    handwriting_mask_path TEXT,
+    combined_mask_path TEXT,
     upload_time TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','processed','failed')),
     quality_score REAL,
@@ -77,6 +80,20 @@ def run_migrations(conn: sqlite3.Connection) -> None:
     This function is idempotent — it is safe to call on every startup.
     """
     conn.executescript(SCHEMA_SQL)
+    # V2 新增列: 对已有数据库做 ALTER TABLE ADD COLUMN (忽略"已存在"错误)
+    _add_column_if_missing(conn, "paper", "red_mask_path", "TEXT")
+    _add_column_if_missing(conn, "paper", "handwriting_mask_path", "TEXT")
+    _add_column_if_missing(conn, "paper", "combined_mask_path", "TEXT")
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection, table: str, column: str, col_type: str
+) -> None:
+    """Add a column if it doesn't already exist (idempotent)."""
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
 
 def get_schema_sql() -> str:

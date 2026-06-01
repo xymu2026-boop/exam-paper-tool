@@ -1,13 +1,8 @@
-"""M1 主编排: 3 阶段管线 + 6 张中间结果输出。
-阶段1: 轻量预处理
-阶段2: mask 检测 (red + handwriting + combined)
-阶段3: 擦除修复 (bgfill 红区 + inpaint 手写)
-"""
+"""M1 main pipeline: 3 stages with 6 debug outputs."""
 
 from __future__ import annotations
 
-import os
-import shutil
+import os, shutil
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -38,13 +33,12 @@ class ProcessResult:
 def process_paper(input_path: str, output_dir: str) -> ProcessResult:
     if not input_path or not output_dir:
         return ProcessResult(success=False, error="input_path or output_dir is empty")
-
     try:
         ensure_dir(output_dir)
     except Exception as e:
         return ProcessResult(success=False, error=f"mkdir_failed: {e}")
 
-    warnings: list[str] = []
+    warnings = []
 
     original_path = os.path.join(output_dir, "original.jpg")
     try:
@@ -55,14 +49,11 @@ def process_paper(input_path: str, output_dir: str) -> ProcessResult:
     processed, pw, err = preprocess_pipeline(input_path)
     warnings.extend(pw)
     if err is not None or processed is None:
-        return ProcessResult(success=False, warnings=warnings, error=err,
-                            original_path=original_path)
+        return ProcessResult(success=False, warnings=warnings, error=err, original_path=original_path)
 
     processed_path = os.path.join(output_dir, "processed.jpg")
     if not save_bgr_jpeg(processed, processed_path, quality=JPEG_QUALITY):
-        return ProcessResult(success=False, warnings=warnings,
-                            error=f"write_failed: {processed_path}",
-                            original_path=original_path)
+        return ProcessResult(success=False, warnings=warnings, error=f"write_failed: {processed_path}", original_path=original_path)
 
     masks = generate_masks(processed_path, output_dir)
     red_mask_path = masks.get("red_mask_path")
@@ -71,8 +62,7 @@ def process_paper(input_path: str, output_dir: str) -> ProcessResult:
 
     cleaned_path = os.path.join(output_dir, "cleaned.jpg")
     if not apply_masks_separately(processed_path, red_mask_path, hw_mask_path, cleaned_path):
-        return ProcessResult(success=False, warnings=warnings,
-                            error="erase_failed",
+        return ProcessResult(success=False, warnings=warnings, error="erase_failed",
                             original_path=original_path, processed_path=processed_path,
                             red_mask_path=red_mask_path, hw_mask_path=hw_mask_path,
                             combined_mask_path=combined_mask_path)
@@ -81,10 +71,7 @@ def process_paper(input_path: str, output_dir: str) -> ProcessResult:
         proc_img = load_bgr(processed_path)
         clean_img = load_bgr(cleaned_path)
         mask_img = load_gray(combined_mask_path) if combined_mask_path else None
-        if proc_img is not None and clean_img is not None and mask_img is not None:
-            quality = score_quality(proc_img, clean_img, mask_img)
-        else:
-            quality = 1.0
+        quality = score_quality(proc_img, clean_img, mask_img) if proc_img is not None and clean_img is not None and mask_img is not None else 1.0
     except Exception as e:
         quality = 0.0
         warnings.append(f"quality_score_failed: {e}")
@@ -92,17 +79,9 @@ def process_paper(input_path: str, output_dir: str) -> ProcessResult:
     if quality < QUALITY_THRESHOLD:
         warnings.append(f"quality_score {quality:.2f} below threshold {QUALITY_THRESHOLD}")
 
-    return ProcessResult(
-        success=True,
-        original_path=original_path,
-        processed_path=processed_path,
-        cleaned_path=cleaned_path,
-        red_mask_path=red_mask_path,
-        hw_mask_path=hw_mask_path,
-        combined_mask_path=combined_mask_path,
-        quality_score=quality,
-        warnings=warnings,
-    )
-
+    return ProcessResult(success=True, original_path=original_path, processed_path=processed_path,
+                        cleaned_path=cleaned_path, red_mask_path=red_mask_path,
+                        hw_mask_path=hw_mask_path, combined_mask_path=combined_mask_path,
+                        quality_score=quality, warnings=warnings)
 
 __all__ = ["process_paper", "ProcessResult", "QUALITY_THRESHOLD", "JPEG_QUALITY"]

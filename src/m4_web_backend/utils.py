@@ -109,6 +109,9 @@ def paper_to_out(paper) -> PaperOut:
         original_path=paper.original_path,
         processed_path=paper.processed_path,
         cleaned_path=paper.cleaned_path,
+        red_mask_path=getattr(paper, "red_mask_path", None),
+        handwriting_mask_path=getattr(paper, "handwriting_mask_path", None),
+        combined_mask_path=getattr(paper, "combined_mask_path", None),
         upload_time=paper.upload_time,
         status=paper.status,
         quality_score=paper.quality_score,
@@ -116,6 +119,9 @@ def paper_to_out(paper) -> PaperOut:
         original_url=to_static_url(paper.original_path),
         processed_url=to_static_url(paper.processed_path),
         cleaned_url=to_static_url(paper.cleaned_path),
+        red_mask_url=to_static_url(getattr(paper, "red_mask_path", None)),
+        handwriting_mask_url=to_static_url(getattr(paper, "handwriting_mask_path", None)),
+        combined_mask_url=to_static_url(getattr(paper, "combined_mask_path", None)),
     )
 
 

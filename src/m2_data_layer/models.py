@@ -23,6 +23,9 @@ class Paper:
     original_path: str
     processed_path: Optional[str]
     cleaned_path: Optional[str]
+    red_mask_path: Optional[str]
+    handwriting_mask_path: Optional[str]
+    combined_mask_path: Optional[str]
     upload_time: str
     status: str
     quality_score: Optional[float]

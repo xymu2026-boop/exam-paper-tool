@@ -169,6 +169,9 @@ class Database:
         status: str,
         processed_path: str = None,
         cleaned_path: str = None,
+        red_mask_path: str = None,
+        handwriting_mask_path: str = None,
+        combined_mask_path: str = None,
         quality_score: float = None,
         error_message: str = None,
     ) -> bool:
@@ -187,6 +190,9 @@ class Database:
         for col, val in (
             ("processed_path", processed_path),
             ("cleaned_path", cleaned_path),
+            ("red_mask_path", red_mask_path),
+            ("handwriting_mask_path", handwriting_mask_path),
+            ("combined_mask_path", combined_mask_path),
             ("quality_score", quality_score),
             ("error_message", error_message),
         ):
