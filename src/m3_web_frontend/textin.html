@@ -1,0 +1,161 @@
+<!doctype html><html lang="zh"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TextIn 试卷擦除实验</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.container{max-width:1500px;margin:0 auto;padding:20px}
+h1{font-size:22px;margin-bottom:4px}h1 span{font-size:14px;color:#64748b;font-weight:400}
+
+.upload{border:2px dashed #334155;border-radius:12px;padding:36px;text-align:center;cursor:pointer;background:#1e293b;margin-bottom:20px;transition:.2s}
+.upload:hover,.upload.dragover{border-color:#3b82f6;background:#1e3a5f}
+.upload .icon{font-size:40px;margin-bottom:8px}
+.upload input{display:none}
+.upload .name{color:#3b82f6;font-size:14px;margin-top:6px}
+
+.controls{display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+.btn{padding:10px 24px;border-radius:8px;border:none;cursor:pointer;font-size:14px;transition:.15s}
+.btn--primary{background:#3b82f6;color:#fff}.btn--primary:hover{background:#2563eb}
+.btn--primary:disabled{background:#475569;cursor:not-allowed}
+.btn--secondary{background:#334155;color:#e2e8f0}.btn--secondary:hover{background:#475569}
+.btn--sm{padding:6px 14px;font-size:12px}
+select{padding:8px 12px;border-radius:8px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;font-size:14px}
+.spinner{width:18px;height:18px;border:2px solid #475569;border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.status{padding:12px 16px;background:#1e293b;border-radius:8px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:10px}
+.status.error{background:#450a0a;color:#fca5a5}.status.success{background:#052e16;color:#86efac}
+
+.grid{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}
+.card{min-width:240px;flex:1;background:#1e293b;border-radius:10px;overflow:hidden}
+.card.fail{background:#450a0a}
+.card img{width:100%;display:block;cursor:pointer;transition:.2s}
+.card img:hover{opacity:.9}
+.card .hd{padding:10px 12px;border-bottom:1px solid #334155}
+.card .hd .name{font-weight:600;font-size:14px}
+.card .hd .desc{font-size:11px;color:#64748b;margin-top:2px}
+.card .meta{padding:10px 12px;font-size:12px;color:#94a3b8;line-height:1.6}
+.card .meta .ok{color:#34d399}.card .meta .err{color:#f87171}
+.card .actions{padding:8px 12px;border-top:1px solid #1e293b;display:flex;gap:6px}
+.card .actions a{text-decoration:none}
+
+.hidden{display:none!important}
+</style>
+</head><body><div class="container">
+<h1>TextIn 试卷擦除实验 <span>本地测试</span></h1>
+
+<div class="upload" id="dropzone" onclick="document.getElementById('fileInput').click()">
+  <div class="icon">📷</div>
+  <div>拖拽试卷照片或点击选择</div>
+  <div class="name hidden" id="fileName"></div>
+  <input type="file" id="fileInput" accept="image/*" onchange="onFileSelect(this.files[0])"/>
+</div>
+
+<div class="controls">
+  <select id="modeSelect">
+    <option value="all">全部 4 个方案</option>
+    <option value="A1_default">仅 A1_default（默认参数）</option>
+    <option value="A2_no_sharpen">仅 A2_no_sharpen（关锐化）</option>
+    <option value="B1_geom_only">仅 B1_geom_only（纯几何）</option>
+    <option value="B2_deshadow">仅 B2_deshadow（去阴影）</option>
+  </select>
+  <button class="btn btn--primary" id="processBtn" onclick="startProcess()" disabled>开始 TextIn 处理</button>
+</div>
+
+<div class="status hidden" id="statusBar"><div class="spinner hidden" id="spinner"></div><span id="statusText"></span></div>
+<div class="grid hidden" id="resultGrid"></div>
+</div>
+
+<script>
+let selectedFile = null
+
+const dropzone = document.getElementById('dropzone')
+dropzone.addEventListener('dragover', e => {e.preventDefault();dropzone.classList.add('dragover')})
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'))
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();dropzone.classList.remove('dragover')
+  const f = e.dataTransfer.files[0];if(f) onFileSelect(f)
+})
+
+function onFileSelect(f) {
+  if(!f||!f.type.startsWith('image/')) return
+  selectedFile = f
+  document.getElementById('fileName').textContent = f.name
+  document.getElementById('fileName').classList.remove('hidden')
+  document.getElementById('processBtn').disabled = false
+}
+
+async function startProcess() {
+  if(!selectedFile) return
+  const btn = document.getElementById('processBtn')
+  const status = document.getElementById('statusBar')
+  const text = document.getElementById('statusText')
+  const spinner = document.getElementById('spinner')
+  const grid = document.getElementById('resultGrid')
+
+  btn.disabled = true; btn.textContent = '处理中…'
+  status.classList.remove('hidden','error','success')
+  spinner.classList.remove('hidden')
+  text.textContent = '正在上传并调用 TextIn API…'
+  grid.classList.add('hidden')
+
+  const fd = new FormData()
+  fd.append('file', selectedFile)
+  fd.append('mode', document.getElementById('modeSelect').value)
+
+  try{
+    const res = await fetch('/api/textin/process', {method:'POST',body:fd})
+    const data = await res.json()
+    spinner.classList.add('hidden')
+    if(!data.ok){
+      status.classList.add('error')
+      text.innerHTML = '处理失败: ' + (data.errors||[]).join('<br>') + (data.error||'')
+    }else{
+      status.classList.add('success')
+      text.textContent = `完成 · ${data.results.length} 个方案 · ${data.results.reduce((s,r)=>s+(r.duration_ms||0),0)}ms`
+    }
+    renderResults(data)
+  }catch(e){
+    spinner.classList.add('hidden')
+    status.classList.add('error')
+    text.textContent = '请求失败: ' + e.message
+  }finally{
+    btn.disabled = false; btn.textContent = '开始 TextIn 处理'
+  }
+}
+
+function renderResults(data) {
+  const grid = document.getElementById('resultGrid')
+  grid.innerHTML = ''
+  grid.classList.remove('hidden')
+
+  const cards = [
+    {title:'原图',desc:'原始上传图片',url:data.original_url,ok:true,dur:'',err:''}
+  ]
+  for(const r of data.results||[]){
+    cards.push({
+      title:r.preset, desc:r.description||'', url:r.image_url, ok:r.ok,
+      dur:r.duration_ms?r.duration_ms+'ms':'', err:r.error||'', sf:r.stage_failed||''
+    })
+  }
+
+  for(const c of cards){
+    const div = document.createElement('div')
+    div.className = 'card' + (c.ok?'':' fail')
+    div.innerHTML = `
+      <div class="hd"><div class="name">${c.title}</div><div class="desc">${c.desc}</div></div>
+      ${c.url ? `<a href="${c.url}" target="_blank"><img src="${c.url}" alt="${c.title}"></a>`
+        : '<div style="min-height:200px;background:#0f172a;display:flex;align-items:center;justify-content:center;color:#475569">无图片</div>'}
+      <div class="meta">
+        <span class="${c.ok?'ok':'err'}">${c.ok?'✅ 成功':'❌ 失败'}</span>
+        ${c.dur?' · '+c.dur:''}
+        ${c.err?'<br><span class="err">'+c.err+'</span>':''}
+        ${c.sf?'<br>阶段: '+c.sf:''}
+      </div>
+      ${c.url?`<div class="actions"><a class="btn btn--secondary btn--sm" href="${c.url}" download>下载</a><a class="btn btn--secondary btn--sm" href="${c.url}" target="_blank">新标签打开</a></div>`:''}
+    `
+    grid.appendChild(div)
+  }
+}
+</script>
+</body></html>
