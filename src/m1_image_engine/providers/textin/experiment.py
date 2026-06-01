@@ -23,6 +23,7 @@ from .presets import PRESETS
 
 INPUT_DIR = Path("data/api_eval/textin/input")
 OUTPUT_DIR = Path("data/api_eval/textin/output")
+COMPARISON_DIR = Path("data/api_eval/textin/comparison")
 
 
 def run_one_sample(sample_path, preset, client, out_dir):
@@ -114,3 +115,95 @@ def run_all():
 
 if __name__ == "__main__":
     run_all()
+
+
+STAGE_LABELS = ["original", "A1_default", "A2_no_sharpen", "B1_geom_only", "B2_deshadow"]
+
+def _img_info(path):
+    try:
+        from PIL import Image
+        img = Image.open(path)
+        return img.size[0], img.size[1], path.stat().st_size
+    except Exception:
+        return 0, 0, 0
+
+
+def generate_compare_html():
+    samples = sorted(d for d in OUTPUT_DIR.iterdir() if d.is_dir())
+    if not samples:
+        return
+
+    COMPARISON_DIR.mkdir(parents=True, exist_ok=True)
+
+    for sample_dir in samples:
+        name = sample_dir.name
+        meta_path = sample_dir / "meta.json"
+        if not meta_path.exists():
+            continue
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        results = {r["preset"]: r for r in meta.get("results", [])}
+
+        html = '<!doctype html><html lang="zh"><head><meta charset="UTF-8">'
+        html += f'<title>{name} — TextIn 实验对比</title>'
+        html += '<style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:16px}'
+        html += 'h2{border-bottom:1px solid #333;padding-bottom:8px}'
+        html += '.grid{display:flex;gap:12px;overflow-x:auto;margin-bottom:24px}'
+        html += '.card{min-width:220px;flex:1;background:#1a1a2e;border-radius:8px;overflow:hidden}'
+        html += '.card.fail{background:#3b1111}'
+        html += '.card img{width:100%;display:block}'
+        html += '.card .info{padding:10px;font-size:12px;color:#aaa;line-height:1.6}'
+        html += '.card .name{font-weight:700;color:#fff;font-size:14px}'
+        html += '.card .err{color:#f87171}'
+        html += '.card .ok{color:#34d399}'
+        html += '</style></head><body>'
+        html += f'<h2>{name}</h2><div class="grid">'
+
+        for stage in STAGE_LABELS:
+            err = ""
+            r = {}
+            if stage == "original":
+                path = sample_dir / "original.jpg"
+                label = "原图"
+                dur = "-"
+                ok = True
+            else:
+                path = sample_dir / f"{stage}.jpg"
+                r = results.get(stage, {})
+                ok = r.get("ok", False)
+                dur = f"{r.get('duration_ms', '?')}ms"
+                err = r.get("error", "")
+                label = stage
+            w, h, size = _img_info(path) if path.exists() else (0, 0, 0)
+            fail_class = ' fail' if not ok else ''
+            html += f'<div class="card{fail_class}">'
+            html += f'<div class="name">{label}</div>'
+            if path.exists():
+                html += f'<img src="../output/{name}/{path.name}" alt="{label}" loading="lazy">'
+            else:
+                html += f'<div style="min-height:150px;background:#111;display:flex;align-items:center;justify-content:center;color:#666">无图片</div>'
+            html += f'<div class="info">'
+            html += f'{"<span class=ok>✅</span>" if ok else "<span class=err>❌</span>"} '
+            html += f'{w}×{h} · {size//1024}KB · {dur}'
+            if err:
+                html += f'<br><span class="err">{err}</span>'
+            if r.get("stage_failed"):
+                html += f'<br>failed at: {r["stage_failed"]}'
+            html += '</div></div>'
+
+        html += '</div></body></html>'
+        (sample_dir / "compare.html").write_text(html, encoding="utf-8")
+
+    with open(COMPARISON_DIR / "index.html", "w", encoding="utf-8") as f:
+        f.write('<!doctype html><html lang="zh"><head><meta charset="UTF-8"><title>TextIn 实验总览</title>')
+        f.write('<style>body{font-family:system-ui;background:#111;color:#eee;margin:20px}')
+        f.write('a{color:#60a5fa}h1{font-size:20px}li{margin:8px 0}</style></head><body>')
+        f.write('<h1>TextIn 实验对比</h1><ul>')
+        for sample_dir in samples:
+            f.write(f'<li><a href="../output/{sample_dir.name}/compare.html">{sample_dir.name}</a></li>')
+        f.write('</ul></body></html>')
+
+
+if __name__ == "__main__":
+    run_all()
+    generate_compare_html()
+    print(f"\n对比页: {COMPARISON_DIR.resolve()}/index.html")
